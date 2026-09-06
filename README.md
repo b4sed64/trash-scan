@@ -4,16 +4,17 @@ A self-hosted reconnaissance dashboard for a single student security team operat
 authorized virtual lab. See [`Trash_Scan_PRD.md`](Trash_Scan_PRD.md) for the full product
 definition.
 
-> **This repository implements Phases 1–4.** Passive discovery (Subfinder + dnsx) and
-> active scanning (Nmap TCP-connect + ProjectDiscovery httpx + a restricted, hash-pinned
-> Nuclei template set) run asynchronously through a Celery worker against real,
-> checksum/version-pinned tool binaries; set `SCANNER_MODE=fake` for offline development.
-> Every active execution needs a typed attestation and a fresh administrator approval.
-> Findings are normalized with stable fingerprints and classified against a compatible
-> baseline (NEW / STILL_OBSERVED / CHANGED / NOT_OBSERVED). SYN scan and OS detection stay
-> disabled until the raw-packet capability is proven (`TRASHSCAN_ALLOW_RAW_PACKET`). PDF/CSV
-> reporting, retention cleanup and the tool-maintenance workflow are Phase 5. See the
-> per-phase notes in [`docs/`](docs/).
+> **This repository implements the full MVP (Phases 1–5).** Passive discovery
+> (Subfinder + dnsx) and active scanning (Nmap TCP-connect + ProjectDiscovery httpx + a
+> restricted, hash-pinned Nuclei template set) run asynchronously through a Celery worker
+> against real, checksum/version-pinned tool binaries; set `SCANNER_MODE=fake` for offline
+> development. Every active execution needs a typed attestation and a fresh administrator
+> approval. Findings are normalized with stable fingerprints and classified against a
+> compatible baseline (NEW / STILL_OBSERVED / CHANGED / NOT_OBSERVED). PDF and CSV reports,
+> 7-day retention cleanup, and a tool/template maintenance workflow are in place. SYN scan
+> and OS detection stay disabled until the raw-packet capability is proven
+> (`TRASHSCAN_ALLOW_RAW_PACKET`) — see [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) for the
+> criterion-by-criterion status and the per-phase notes in [`docs/`](docs/).
 
 ## Quick start (Docker Desktop on Windows)
 
@@ -63,7 +64,7 @@ session invalidation on account disable, and the fake adapter.
 | Database | PostgreSQL 16, Alembic migrations | Implemented |
 | Queue / scheduler | Redis + Celery (`worker`, `beat`) | Implemented |
 | Scan worker | Python + pinned CLI tools | Subfinder, dnsx, Nmap, httpx, restricted Nuclei (real) |
-| Reports | Jinja2 + WeasyPrint / CSV | **Deferred to Phase 5** |
+| Reports | Jinja2 + WeasyPrint; Python `csv` | PDF + CSV(.zip), formula-injection escaping, export audit |
 
 ### Security-critical modules (require human review on every change)
 
@@ -76,10 +77,20 @@ session invalidation on account disable, and the fake adapter.
 - [`backend/app/security.py`](backend/app/security.py) — Argon2id password hashing, session
   and CSRF tokens.
 
+## Documentation
+
+| Doc | Contents |
+|---|---|
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Running locally, on another machine, LAN access + TLS, worker reachability |
+| [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md) | `pg_dump` / `psql` backup and restore of the `db_data` volume |
+| [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) | Every PRD §24 acceptance criterion → where it's implemented and tested |
+| [`docs/PRD_EVALUATION.md`](docs/PRD_EVALUATION.md) | Assessment of the PRD, ambiguities resolved, risks |
+| `docs/PHASE{1..5}_STATUS.md` | Per-phase deliverable and requirement mapping |
+
 ## Data & backup
 
-State lives in the `db_data` Docker volume. See
-[`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
+State lives in the `db_data` (database) and `artifacts` (raw output + reports) Docker
+volumes. See [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
 
 ## Safety boundary
 

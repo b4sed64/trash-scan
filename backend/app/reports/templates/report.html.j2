@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: A4; margin: 18mm 16mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 8pt; color: #666; } }
+  body { font-family: "DejaVu Sans", sans-serif; font-size: 10pt; color: #1c1c1c; line-height: 1.4; }
+  h1 { font-size: 20pt; margin: 0 0 2mm; }
+  h2 { font-size: 13pt; border-bottom: 1.5pt solid #2f6b4f; padding-bottom: 1mm; margin: 8mm 0 3mm; }
+  h3 { font-size: 11pt; margin: 5mm 0 2mm; }
+  .muted { color: #555; }
+  .cover { border-left: 4pt solid #2f6b4f; padding-left: 4mm; }
+  table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; }
+  th, td { border: 0.5pt solid #bbb; padding: 1.5mm 2mm; text-align: left; vertical-align: top; font-size: 8.5pt; }
+  th { background: #eef2ec; }
+  .sev-CRITICAL, .sev-HIGH { color: #a11; font-weight: bold; }
+  .sev-MEDIUM, .sev-LOW { color: #a5701a; }
+  .pill { display: inline-block; border: 0.5pt solid #999; border-radius: 6pt; padding: 0 2mm; font-size: 8pt; }
+  .note { background: #f4f7f3; border: 0.5pt solid #cdd; padding: 2mm 3mm; margin: 2mm 0; }
+  ul { margin: 1mm 0 3mm; padding-left: 5mm; }
+  code { font-family: "DejaVu Sans Mono", monospace; font-size: 8pt; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>{{ brand }} — Reconnaissance Report</h1>
+  <p class="muted">
+    Target <strong>{{ target.value }}</strong> ({{ target.kind }}{% if target.is_public %}, public / attested{% else %}, private{% endif %})<br>
+    Generated {{ generated_at.strftime('%Y-%m-%d %H:%M UTC') }} &middot; Requested by {{ requester }}<br>
+    Profiles used: {{ profiles_used | join(', ') if profiles_used else 'none' }}
+  </p>
+</div>
+
+<h2>1. Scope &amp; authorization</h2>
+<p>Approved target boundary: <code>{{ scope.target_boundary }}</code></p>
+<p>Configured private ranges: {% for c in scope.private_cidrs %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none configured</span>{% endfor %}</p>
+
+{% if authorization.public_target %}
+<div class="note">
+  <strong>Public target attestation.</strong> “{{ authorization.public_target.attestation }}”<br>
+  Attested by {{ authorization.public_target.attested_by }} at {{ authorization.public_target.attested_at }}.
+  Boundary: <code>{{ authorization.public_target.boundary }}</code>.
+</div>
+{% endif %}
+
+{% if authorization.latest_active_approval %}
+{% set a = authorization.latest_active_approval %}
+<div class="note">
+  <strong>Most recent active-scan authorization.</strong><br>
+  Profile {{ a.profile }} &middot; approved by {{ a.approved_by }} at {{ a.approved_at }}
+  (approval valid until {{ a.expires_at }}).<br>
+  Approved boundary: <code>{{ a.approved_boundary }}</code>
+  {% if a.resolved_addresses %}(resolved to {{ a.resolved_addresses | join(', ') }}){% endif %}<br>
+  Attestation reference: {{ a.attestation_reference }} — “{{ a.attestation_text }}”
+</div>
+{% else %}
+<p class="muted">No active scans have been approved for this target; results below are from passive discovery only.</p>
+{% endif %}
+
+<h2>2. Executive summary</h2>
+<table>
+  <tr><th>Assets</th><th>Services</th><th>Findings</th><th>Executions</th></tr>
+  <tr>
+    <td>{{ summary.asset_count }}</td><td>{{ summary.service_count }}</td>
+    <td>{{ summary.finding_count }}</td><td>{{ summary.execution_count }}</td>
+  </tr>
+</table>
+<table>
+  <tr>{% for s in ['CRITICAL','HIGH','MEDIUM','LOW','INFO'] %}<th>{{ s }}</th>{% endfor %}</tr>
+  <tr>{% for s in ['CRITICAL','HIGH','MEDIUM','LOW','INFO'] %}<td>{{ summary.severity_counts.get(s, 0) }}</td>{% endfor %}</tr>
+</table>
+{% if summary.comparison_counts %}
+<p>Change vs previous compatible scan:
+  {% for k, v in summary.comparison_counts.items() %}<span class="pill">{{ k.replace('_',' ') }}: {{ v }}</span> {% endfor %}
+</p>
+{% endif %}
+
+<h2>3. Limitations of automated reconnaissance</h2>
+<ul>{% for l in limitations %}<li>{{ l }}</li>{% endfor %}</ul>
+
+<h2>4. Asset inventory</h2>
+<table>
+  <tr><th>Kind</th><th>Value</th><th>Source</th><th>In private scope</th><th>Approved</th><th>Open ports</th><th>Web technology</th></tr>
+  {% for a in assets %}
+  <tr>
+    <td>{{ a.kind }}</td><td>{{ a.value }}</td><td>{{ a.source }}</td>
+    <td>{{ 'yes' if a.in_scope else 'no' }}</td><td>{{ 'yes' if a.approved else 'no' }}</td>
+    <td>{{ a.ports | join(', ') }}</td><td>{{ a.tech | join(', ') }}</td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">No assets recorded.</td></tr>{% endfor %}
+</table>
+
+<h3>Services (probable; confirm manually)</h3>
+<table>
+  <tr><th>Asset</th><th>Port</th><th>Proto</th><th>State</th><th>Product</th><th>Version</th><th>Confidence</th></tr>
+  {% for s in services %}
+  <tr><td>{{ s.asset_id }}</td><td>{{ s.port }}</td><td>{{ s.protocol }}</td><td>{{ s.state }}</td>
+      <td>{{ s.product }}</td><td>{{ s.version }}</td><td>{{ s.confidence }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No services observed.</td></tr>{% endfor %}
+</table>
+
+<h2>5. Findings</h2>
+<p class="muted">Automated indicators requiring human validation. "Not observed" does not mean resolved.</p>
+<table>
+  <tr><th>Severity</th><th>Finding</th><th>Asset</th><th>Status</th><th>Source</th><th>First / last observed</th><th>Evidence</th></tr>
+  {% for f in findings %}
+  <tr>
+    <td class="sev-{{ f.severity }}">{{ f.severity }}</td>
+    <td>{{ f.name }}<br><code>{{ f.rule_id }}</code></td>
+    <td>{{ f.asset }}{% if f.port %}:{{ f.port }}{% endif %}</td>
+    <td>{{ f.status }}</td>
+    <td>{{ f.source_tool }}</td>
+    <td>{{ f.first_seen_at }}<br>{{ f.last_seen_at }}</td>
+    <td>{{ f.evidence_summary }}</td>
+  </tr>
+  {% else %}<tr><td colspan="7" class="muted">No findings.</td></tr>{% endfor %}
+</table>
+
+<h2>6. Change summary</h2>
+{% if comparison.eligible %}
+<p>Compared against execution <code>{{ comparison.baseline_execution_id }}</code>.</p>
+{% if comparison.limitations %}<ul>{% for l in comparison.limitations %}<li>{{ l }}</li>{% endfor %}</ul>{% endif %}
+<table>
+  <tr><th>Classification</th><th>Severity</th><th>Finding</th><th>Asset</th></tr>
+  {% for d in comparison.details %}
+  <tr><td>{{ d.classification.replace('_',' ') }}</td><td>{{ d.severity }}</td><td>{{ d.name }}</td><td>{{ d.asset }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No differences.</td></tr>{% endfor %}
+</table>
+{% else %}
+<p class="muted">No compatible baseline execution exists yet, so change classification is not available.</p>
+{% endif %}
+
+<h2>7. Methodology appendix</h2>
+<h3>Limits in effect</h3>
+<table>
+  {% for k, v in methodology.limits.items() %}<tr><th>{{ k }}</th><td>{{ v }}</td></tr>{% endfor %}
+</table>
+<h3>Executions</h3>
+{% for e in methodology.executions %}
+<p>
+  <strong>{{ e.profile }}</strong> — {{ e.id }} — state {{ e.state }}{% if e.partial %} (partial){% endif %}<br>
+  <span class="muted">ran {{ e.started_at }} → {{ e.finished_at }}</span><br>
+  Tool versions: {% for t, ver in (e.tool_versions or {}).items() %}<code>{{ t }} {{ ver }}</code> {% endfor %}<br>
+  {% if e.template_set_hash %}Template-set hash: <code>{{ e.template_set_hash }}</code><br>{% endif %}
+  Stages: {% for s in (e.stages or []) %}<span class="pill">{{ s.stage }} {{ 'ok' if s.ok else 'FAILED' }}{{ ' / incomplete' if s.incomplete else '' }}</span> {% endfor %}
+  {% if e.error %}<br><span class="sev-HIGH">Error: {{ e.error }}</span>{% endif %}
+</p>
+{% endfor %}
+
+</body>
+</html>

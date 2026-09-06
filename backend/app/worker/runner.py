@@ -25,6 +25,7 @@ from ..services.audit_service import AuditService
 from ..services.emergency import active_stop, blocks_execution
 from ..services.execution_service import TERMINAL, ScanService
 from ..services import comparison as comparison_service
+from ..services import oplog
 from ..services.findings import record_findings
 from ..services.normalization import apply_stage_outputs
 from ..services.scope_db import evaluate_target_scope, load_private_cidrs
@@ -163,6 +164,8 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
 
         result_dir = _result_dir(execution_id)
         ex.result_dir = result_dir
+        oplog.log(db, "INFO", f"execution running: {profile_name}", target_id=ex.target_id,
+                  execution_id=execution_id, correlation_id=ex.correlation_id)
         db.commit()
 
     # --- run stages (no DB session held while subprocesses run) ----------
@@ -283,6 +286,9 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         )
         db.flush()
         comparison_service.build_and_store(db, ex)
+        oplog.log(db, "INFO",
+                  f"execution completed: {summary}", target_id=ex.target_id,
+                  execution_id=ex.id, correlation_id=ex.correlation_id)
         db.commit()
         return "COMPLETED"
 

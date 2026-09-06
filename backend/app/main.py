@@ -15,7 +15,9 @@ from .api import (
     auth,
     emergency,
     findings,
+    maintenance,
     notifications,
+    reports,
     scans,
     schedules,
     targets,
@@ -59,9 +61,11 @@ def create_app() -> FastAPI:
     app.include_router(scans.router)
     app.include_router(schedules.router)
     app.include_router(findings.router)
+    app.include_router(reports.router)
     app.include_router(approvals.router)
     app.include_router(emergency.router)
     app.include_router(admin.router)
+    app.include_router(maintenance.router)
     app.include_router(audit.router)
     app.include_router(notifications.router)
 

@@ -404,6 +404,53 @@ class ScheduleOccurrence(Base):
     )
 
 
+class Report(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    # TARGET | EXECUTION
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    # PDF | CSV_ZIP
+    format: Mapped[str] = mapped_column(String(10), nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("targets.id"))
+    execution_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("scan_executions.id"))
+    requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    filename: Mapped[str] = mapped_column(String(256), nullable=False)
+    path: Mapped[str] = mapped_column(String(512), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OperationalLog(Base):
+    __tablename__ = "operational_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    level: Mapped[str] = mapped_column(String(8), default="INFO")
+    message: Mapped[str] = mapped_column(Text, default="")
+    target_id: Mapped[str | None] = mapped_column(String(36))
+    execution_id: Mapped[str | None] = mapped_column(String(36))
+    stage_id: Mapped[str | None] = mapped_column(String(48))
+    correlation_id: Mapped[str | None] = mapped_column(String(48))
+
+
+class MaintenanceProposal(Base):
+    __tablename__ = "maintenance_proposals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    note: Mapped[str] = mapped_column(Text, default="")
+    current_state: Mapped[dict] = mapped_column(JSON, default=dict)
+    proposed_state: Mapped[dict] = mapped_column(JSON, default=dict)
+    # PROPOSED | APPROVED | REJECTED | APPLIED
+    state: Mapped[str] = mapped_column(String(12), nullable=False, default="PROPOSED")
+    decided_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 

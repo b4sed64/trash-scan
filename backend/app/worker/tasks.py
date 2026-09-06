@@ -26,6 +26,14 @@ def scheduler_tick() -> dict:
         return schedule_service.tick(db, enqueue=_enqueue)
 
 
+@celery_app.task(name="app.worker.tasks.retention_sweep")
+def retention_sweep() -> dict:
+    from ..services import retention
+
+    with SessionLocal() as db:
+        return retention.sweep(db)
+
+
 @celery_app.task(name="app.worker.tasks.lifecycle_sweep")
 def lifecycle_sweep() -> dict:
     from ..services import emergency

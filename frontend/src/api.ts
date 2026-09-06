@@ -35,12 +35,48 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return data as T;
 }
 
+function csrfHeader(): Record<string, string> {
+  return { "X-CSRF-Token": csrfToken() };
+}
+
+async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(path, { method: "GET", credentials: "include", headers: csrfHeader() });
+  if (!res.ok) {
+    throw new ApiError(res.status, `download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const name = match ? match[1] : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   get: <T>(p: string) => request<T>("GET", p),
   post: <T>(p: string, b?: unknown) => request<T>("POST", p, b),
   patch: <T>(p: string, b?: unknown) => request<T>("PATCH", p, b),
   del: <T>(p: string, b?: unknown) => request<T>("DELETE", p, b),
+  download: downloadFile,
 };
+
+export interface ReportRow {
+  id: string;
+  kind: string;
+  format: string;
+  target_id: string | null;
+  execution_id: string | null;
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  requested_by_id: string | null;
+}
 
 // --- shared types ---
 export interface Me {

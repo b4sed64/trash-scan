@@ -8,6 +8,7 @@ import {
   FindingRow,
   ObservationRow,
   OccurrenceRow,
+  ReportRow,
   ScheduleRow,
   ServiceRow,
   Target,
@@ -62,6 +63,7 @@ export function TargetDetail() {
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [findings, setFindings] = useState<FindingRow[]>([]);
+  const [reports, setReports] = useState<ReportRow[]>([]);
   const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [active, setActive] = useState({
@@ -91,6 +93,7 @@ export function TargetDetail() {
     setObservations(await api.get<ObservationRow[]>(`/api/targets/${id}/observations`));
     setServices(await api.get<ServiceRow[]>(`/api/targets/${id}/services`));
     setFindings(await api.get<FindingRow[]>(`/api/targets/${id}/findings`));
+    setReports(await api.get<ReportRow[]>(`/api/targets/${id}/reports`).catch(() => []));
     setComparison(
       await api
         .get<ComparisonResult>(`/api/targets/${id}/comparison`)
@@ -127,6 +130,16 @@ export function TargetDetail() {
       setError(e instanceof ApiError ? e.message : "Could not queue passive discovery");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function makeReport(format: "PDF" | "CSV_ZIP") {
+    setError("");
+    try {
+      await api.post(`/api/targets/${id}/reports`, { format });
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Report generation failed");
     }
   }
 
@@ -622,6 +635,56 @@ export function TargetDetail() {
           </div>
           <button type="submit">Add passive schedule</button>
         </form>
+      </section>
+
+      <section className="card">
+        <h3>Reports &amp; exports</h3>
+        <div className="row">
+          <button onClick={() => void makeReport("PDF")}>Generate PDF report</button>
+          <button className="secondary" onClick={() => void makeReport("CSV_ZIP")}>
+            Export CSV (.zip)
+          </button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Format</th>
+              <th>File</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((r) => (
+              <tr key={r.id}>
+                <td className="muted">{new Date(r.created_at).toLocaleString()}</td>
+                <td>{r.format}</td>
+                <td>{r.filename}</td>
+                <td>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      void api
+                        .download(`/api/reports/${r.id}/download`, r.filename)
+                        .catch((e) =>
+                          setError(e instanceof ApiError ? e.message : "Download failed"),
+                        )
+                    }
+                  >
+                    Download
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {reports.length === 0 && (
+              <tr>
+                <td colSpan={4} className="muted">
+                  No reports for this target yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </section>
 
       <section className="card">

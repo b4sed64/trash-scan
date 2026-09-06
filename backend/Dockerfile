@@ -18,6 +18,8 @@ ARG NUCLEI_VERSION=3.3.7
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        curl unzip ca-certificates dumb-init nmap \
+       libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libjpeg62-turbo libopenjp2-7 \
+       fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && nmap --version | head -1
 

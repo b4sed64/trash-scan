@@ -24,6 +24,9 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="layout">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <aside className="sidebar">
         <h1>🦝 Trash Scan</h1>
         <nav aria-label="Primary">
@@ -33,6 +36,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <NavLink to="/targets">Targets</NavLink>
           <NavLink to="/scans">Scans</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/approvals">Approvals</NavLink>}
+          <NavLink to="/reports">Reports</NavLink>
           <NavLink to="/audit">Audit trail</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/admin">Administration</NavLink>}
         </nav>
@@ -47,7 +51,9 @@ export function Layout({ children }: { children: ReactNode }) {
           Log out
         </button>
       </aside>
-      <main className="content">{children}</main>
+      <main className="content" id="main-content" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }

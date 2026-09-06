@@ -20,6 +20,21 @@ interface DenyRule {
   category: string;
   is_builtin: boolean;
 }
+interface Maintenance {
+  current: {
+    tool_versions: Record<string, string>;
+    template_set_ok: boolean;
+    template_set_hash: string;
+    templates: Record<string, string>;
+  };
+  proposals: {
+    id: string;
+    state: string;
+    note: string;
+    created_at: string;
+    decision_note: string;
+  }[];
+}
 
 export function Admin() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -27,14 +42,17 @@ export function Admin() {
   const [denies, setDenies] = useState<DenyRule[]>([]);
   const [error, setError] = useState("");
 
+  const [maint, setMaint] = useState<Maintenance | null>(null);
   const [nu, setNu] = useState({ username: "", password: "", role: "SCANNER" });
   const [nc, setNc] = useState({ cidr: "", note: "" });
   const [nd, setNd] = useState({ rule_type: "DOMAIN_SUFFIX", value: "", category: "CUSTOM" });
+  const [proposalNote, setProposalNote] = useState("");
 
   async function loadAll() {
     setAccounts(await api.get<Account[]>("/api/admin/accounts"));
     setCidrs(await api.get<PrivateCidr[]>("/api/admin/private-cidrs"));
     setDenies(await api.get<DenyRule[]>("/api/admin/deny-rules"));
+    setMaint(await api.get<Maintenance>("/api/admin/maintenance").catch(() => null));
   }
   useEffect(() => {
     void loadAll();
@@ -232,6 +250,106 @@ export function Admin() {
           </div>
           <button type="submit">Add deny rule</button>
         </form>
+      </section>
+
+      <section className="card">
+        <h3>Tool &amp; template maintenance</h3>
+        <p className="notice">
+          The application never updates tools or templates itself. Approving a proposal
+          records the review; an operator then rebuilds the worker image and redeploys.
+        </p>
+        {maint && (
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Tool</th>
+                  <th>Running version</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(maint.current.tool_versions).map(([t, v]) => (
+                  <tr key={t}>
+                    <td>{t}</td>
+                    <td className="muted">{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="muted">
+              Nuclei template set:{" "}
+              <span className={`badge ${maint.current.template_set_ok ? "ok" : "bad"}`}>
+                {maint.current.template_set_ok ? "verified" : "MISMATCH"}
+              </span>{" "}
+              hash <code>{maint.current.template_set_hash.slice(0, 16)}…</code> ·{" "}
+              {Object.keys(maint.current.templates).length} templates
+            </p>
+            <form
+              onSubmit={wrap(() =>
+                api
+                  .post("/api/admin/maintenance/proposals", { note: proposalNote })
+                  .then(() => setProposalNote("")),
+              )}
+            >
+              <label htmlFor="pn">Propose a tool/template change (describe what and why)</label>
+              <textarea
+                id="pn"
+                rows={2}
+                value={proposalNote}
+                onChange={(e) => setProposalNote(e.target.value)}
+                required
+              />
+              <button type="submit" style={{ marginTop: "0.5rem" }}>
+                Submit proposal
+              </button>
+            </form>
+            <table>
+              <thead>
+                <tr>
+                  <th>Created</th>
+                  <th>State</th>
+                  <th>Note</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {maint.proposals.map((p) => (
+                  <tr key={p.id}>
+                    <td className="muted">{new Date(p.created_at).toLocaleString()}</td>
+                    <td>{p.state}</td>
+                    <td>{p.note}</td>
+                    <td>
+                      {p.state === "PROPOSED" && (
+                        <>
+                          <button
+                            className="secondary"
+                            onClick={wrap(() =>
+                              api.post(`/api/admin/maintenance/proposals/${p.id}/approve`, {
+                                decision_note: "",
+                              }),
+                            )}
+                          >
+                            Approve
+                          </button>{" "}
+                          <button
+                            className="danger"
+                            onClick={wrap(() =>
+                              api.post(`/api/admin/maintenance/proposals/${p.id}/reject`, {
+                                decision_note: "",
+                              }),
+                            )}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </section>
     </div>
   );

@@ -33,5 +33,9 @@ celery_app.conf.update(
             "task": "app.worker.tasks.lifecycle_sweep",
             "schedule": 30.0,
         },
+        "retention-sweep": {
+            "task": "app.worker.tasks.retention_sweep",
+            "schedule": 3600.0,
+        },
     },
 )

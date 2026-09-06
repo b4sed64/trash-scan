@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, Execution } from "../api";
+import { api, ApiError, EmergencyStopStatus, Execution } from "../api";
+import { useAuth } from "../auth";
 
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"];
 
@@ -12,13 +13,18 @@ export function stateBadge(state: string): string {
 }
 
 export function Scans() {
+  const { me } = useAuth();
+  const isAdmin = me?.role === "ADMINISTRATOR";
   const [scans, setScans] = useState<Execution[]>([]);
+  const [stop, setStop] = useState<EmergencyStopStatus | null>(null);
   const [error, setError] = useState("");
 
-  const load = useCallback(
-    () => api.get<Execution[]>("/api/scans").then(setScans).catch(() => undefined),
-    [],
-  );
+  const load = useCallback(async () => {
+    setScans((await api.get<Execution[]>("/api/scans").catch(() => [])) as Execution[]);
+    if (isAdmin) {
+      setStop(await api.get<EmergencyStopStatus>("/api/emergency-stop").catch(() => null));
+    }
+  }, [isAdmin]);
   useEffect(() => {
     void load();
     const active = () => scans.some((s) => !TERMINAL.includes(s.state));
@@ -35,10 +41,48 @@ export function Scans() {
     }
   }
 
+  async function emergencyStop() {
+    if (!window.confirm("Terminate all active scan process groups and block scheduled starts?"))
+      return;
+    try {
+      await api.post("/api/emergency-stop", { scope: "ALL", note: "from Scans view" });
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Emergency stop failed");
+    }
+  }
+
+  async function clearStop(id: string) {
+    await api.post(`/api/emergency-stop/${id}/clear`);
+    await load();
+  }
+
   return (
     <div>
       <h2>Scans</h2>
       {error && <p className="error">{error}</p>}
+
+      {isAdmin && (
+        <section className="card">
+          {stop?.active ? (
+            <>
+              <p>
+                <span className="badge bad status-dot">
+                  Emergency stop {stop.active.state}
+                </span>{" "}
+                <span className="muted">{stop.active.note}</span>
+              </p>
+              <button className="secondary" onClick={() => void clearStop(stop.active!.id)}>
+                Clear emergency stop
+              </button>
+            </>
+          ) : (
+            <button className="danger" onClick={() => void emergencyStop()}>
+              Emergency stop — terminate all active scans
+            </button>
+          )}
+        </section>
+      )}
       <section className="card">
         <table>
           <thead>

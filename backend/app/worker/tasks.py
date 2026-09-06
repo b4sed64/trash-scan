@@ -28,13 +28,15 @@ def scheduler_tick() -> dict:
 
 @celery_app.task(name="app.worker.tasks.lifecycle_sweep")
 def lifecycle_sweep() -> dict:
+    from ..services import emergency
+
     now = dt.datetime.now(dt.timezone.utc)
     expired = timed_out = requeued = 0
     with SessionLocal() as db:
-        # Approval window (SCAN-03): unused approval expires.
+        # Approval window (SCAN-03): an approved-but-unstarted execution expires.
         for ex in db.execute(
             select(ScanExecution).where(
-                ScanExecution.state.in_(("AWAITING_APPROVAL", "APPROVED")),
+                ScanExecution.state.in_(("AWAITING_APPROVAL", "APPROVED", "QUEUED")),
                 ScanExecution.approval_expires_at.is_not(None),
                 ScanExecution.approval_expires_at < now,
             )
@@ -42,6 +44,8 @@ def lifecycle_sweep() -> dict:
             if ScanService.transition(db, ex, "EXPIRED", actor="system:sweeper",
                                       reason="approval window elapsed"):
                 expired += 1
+
+        emergency.reconcile(db)
 
         # Runtime cap (SCAN-04): measured from RUNNING, independent of approval.
         for ex in db.execute(

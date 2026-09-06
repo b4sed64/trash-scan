@@ -1,4 +1,4 @@
-"""Stage orchestration for a single execution.
+"""Stage orchestration for a single execution (passive and active).
 
 Kept separate from the Celery task wrapper so it can be unit-tested by calling
 ``execute(execution_id)`` directly.
@@ -6,16 +6,32 @@ Kept separate from the Celery task wrapper so it can be unit-tested by calling
 from __future__ import annotations
 
 import datetime as dt
+import ipaddress
 import os
 
 from ..adapters import StageInput, get_adapter
-from ..adapters.base import STAGE_DNSX, STAGE_SUBFINDER
+from ..adapters.base import STAGE_DNSX, STAGE_HTTPX, STAGE_NMAP, STAGE_SUBFINDER
 from ..config import get_settings
 from ..db import SessionLocal
 from ..models import ScanExecution
+from ..scan_profiles import profile_for
 from ..services.audit_service import AuditService
-from ..services.execution_service import ScanService
+from ..services.emergency import active_stop, blocks_execution
+from ..services.execution_service import TERMINAL, ScanService
 from ..services.normalization import apply_stage_outputs
+from ..services.scope_db import evaluate_target_scope, load_private_cidrs
+
+_NON_START = {"DRAFT", "AWAITING_APPROVAL", "APPROVED", "QUEUED"}
+
+
+def _now() -> dt.datetime:
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _aware(value: dt.datetime | None) -> dt.datetime | None:
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=dt.timezone.utc)
 
 
 def _limits() -> dict:
@@ -27,141 +43,231 @@ def _limits() -> dict:
     }
 
 
-def _result_dir(execution: ScanExecution) -> str:
-    root = get_settings().result_root
-    path = os.path.join(root, execution.id)
+def _result_dir(execution_id: str) -> str:
+    path = os.path.join(get_settings().result_root, execution_id)
     os.makedirs(path, exist_ok=True)
     return path
 
 
-def _cancel_check(execution_id: str):
+def _within_scope(ip: str, private_cidrs: list[str]) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in ipaddress.ip_network(c, strict=False) for c in private_cidrs)
+
+
+def _guard_factory(execution_id: str):
+    """Poll cancellation and the runtime deadline (~1/s)."""
     def check() -> bool:
         with SessionLocal() as db:
             ex = db.get(ScanExecution, execution_id)
-            return bool(ex and ex.cancel_requested)
+            if ex is None:
+                return True
+            if ex.cancel_requested:
+                return True
+            deadline = _aware(ex.runtime_deadline_at)
+            return bool(deadline and _now() > deadline)
     return check
 
 
-def execute(execution_id: str, *, enqueue=None) -> str:
-    """Run one execution to a terminal state. Returns the final state."""
-    with SessionLocal() as db:
-        execution = db.get(ScanExecution, execution_id)
-        if execution is None:
-            return "MISSING"
-        if execution.state in {"COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"}:
-            return execution.state
+def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycle is inherently branchy
+    settings = get_settings()
 
-        if execution.cancel_requested and execution.state in {"QUEUED", "APPROVED"}:
-            ScanService.transition(db, execution, "CANCELLED", actor="system:worker",
-                                   reason=execution.cancel_reason or "cancelled before start")
+    # --- pre-flight (single short transaction) --------------------------
+    with SessionLocal() as db:
+        ex = db.get(ScanExecution, execution_id)
+        if ex is None:
+            return "MISSING"
+        if ex.state in TERMINAL:
+            return ex.state
+
+        stop = active_stop(db)
+        if blocks_execution(stop, ex) and ex.state != "RUNNING":
+            ScanService.transition(db, ex, "CANCELLED", actor="system:worker",
+                                   reason="emergency stop active")
             db.commit()
             return "CANCELLED"
 
-        if execution.state == "QUEUED" and not ScanService.capacity_available(db, execution):
-            # Leave QUEUED; lifecycle_sweep will re-enqueue when a slot frees.
-            return "QUEUED"
-
-        if execution.state == "QUEUED":
-            ScanService.transition(db, execution, "RUNNING", actor="system:worker")
+        if ex.cancel_requested and ex.state in _NON_START:
+            ScanService.transition(db, ex, "CANCELLED", actor="system:worker",
+                                   reason=ex.cancel_reason or "cancelled before start")
             db.commit()
-        elif execution.state != "RUNNING":
-            return execution.state
+            return "CANCELLED"
 
-        result_dir = _result_dir(execution)
-        execution.result_dir = result_dir
+        if ex.state == "QUEUED" and not ScanService.capacity_available(db, ex):
+            return "QUEUED"  # lifecycle_sweep re-enqueues when a slot frees
+
+        classification = ex.classification
+        profile_name = ex.profile
+        ex_options = dict(ex.options or {})
+        target_kind = ex.target.kind
+        target_value = ex.target.value
+        private_cidrs = load_private_cidrs(db)
+        in_scope_ips: list[str] = []
+
+        if classification == "ACTIVE":
+            expires = _aware(ex.approval_expires_at)
+            if ex.state in _NON_START and expires and _now() > expires:
+                ScanService.transition(db, ex, "EXPIRED", actor="system:worker",
+                                       reason="approval window elapsed before start")
+                db.commit()
+                return "EXPIRED"
+
+            # SCOPE-07: re-resolve and re-evaluate immediately before launch.
+            decision = evaluate_target_scope(db, ex.target)
+            literal_ips: list[str] = []
+            if target_kind == "IPV4":
+                literal_ips = [target_value]
+            elif target_kind == "CIDR":
+                net = ipaddress.ip_network(target_value, strict=False)
+                literal_ips = [str(h) for h in list(net.hosts())[:1024]] or [str(net.network_address)]
+            candidate_ips = sorted(set(decision.resolved_addresses) | set(literal_ips))
+            in_scope_ips = [ip for ip in candidate_ips if _within_scope(ip, private_cidrs)]
+
+            if not decision.allowed or not in_scope_ips:
+                ScanService.transition(
+                    db, ex, "FAILED", actor="system:worker",
+                    reason=f"scope re-check failed before launch: {decision.reason}",
+                    extra_payload={"resolved": decision.resolved_addresses},
+                )
+                AuditService.append(
+                    db, actor="system:worker", action="SCAN_SCOPE_RECHECK_FAILED",
+                    object_type="scan_execution", object_id=ex.id,
+                    payload=decision.as_audit_payload(),
+                )
+                db.commit()
+                return "FAILED"
+
+            AuditService.append(
+                db, actor="system:worker", action="SCAN_SCOPE_RECHECK_PASSED",
+                object_type="scan_execution", object_id=ex.id,
+                payload={"in_scope_addresses": in_scope_ips},
+            )
+
+        if ex.state == "QUEUED":
+            ScanService.transition(db, ex, "RUNNING", actor="system:worker",
+                                   extra_payload={"classification": classification})
+        elif ex.state != "RUNNING":
+            db.commit()
+            return ex.state
+
+        result_dir = _result_dir(execution_id)
+        ex.result_dir = result_dir
         db.commit()
 
-        target_kind = execution.target.kind
-        target_value = execution.target.value
-
-    # --- run stages (no DB session held while subprocesses run) -----------
-    settings = get_settings()
+    # --- run stages (no DB session held while subprocesses run) ----------
     limits = _limits()
     resolvers = settings.resolver_list()
-    should_cancel = _cancel_check(execution_id)
-    stage_outputs = []
-    stage_meta = []
+    guard = _guard_factory(execution_id)
+    profile = profile_for(profile_name)
+
+    stage_outputs, stage_meta = [], []
     tool_versions: dict[str, str] = {}
     normalized_args: dict[str, list[str]] = {}
     incomplete = False
-
-    plan = []
-    if execution.classification == "PASSIVE":
-        if target_kind == "DOMAIN":
-            plan.append(STAGE_SUBFINDER)
-        plan.append(STAGE_DNSX)
-
     discovered_hosts: list[str] = []
+    web_probes: list[str] = []
+
+    plan = [s for s in profile.stages if not (s == STAGE_SUBFINDER and target_kind != "DOMAIN")]
+
     for stage_name in plan:
-        if should_cancel():
+        if guard():
             incomplete = True
             break
         adapter = get_adapter(stage_name)
-        hosts = list(discovered_hosts)
+        if stage_name == STAGE_SUBFINDER:
+            hosts = []
+        elif stage_name == STAGE_DNSX:
+            hosts = list(discovered_hosts)
+        elif stage_name == STAGE_NMAP:
+            hosts = list(in_scope_ips)
+        elif stage_name == STAGE_HTTPX:
+            hosts = sorted(set(web_probes) | set(in_scope_ips))
+        else:
+            hosts = []
+
+        options = dict()
+        options["_cancel_check"] = guard
+        options["_private_cidrs"] = private_cidrs
+        options["syn"] = profile.nmap_syn
+        options["os_detection"] = profile.nmap_os_detection
+        options["service_detection"] = profile.nmap_service_detection
+        options["ports"] = (ex_options or {}).get("ports")
         inp = StageInput(
             stage=stage_name, target_kind=target_kind, target_value=target_value,
-            profile=execution.profile, hosts=hosts, options=execution.options or {},
-            limits=limits, result_dir=result_dir, resolvers=resolvers,
+            profile=profile_name, hosts=hosts, options=options, limits=limits,
+            result_dir=result_dir, resolvers=resolvers,
         )
         out = adapter.run(inp)
         stage_outputs.append(out)
         tool_versions[out.tool] = out.tool_version
         normalized_args[stage_name] = out.args
         stage_meta.append({
-            "stage": stage_name, "tool": out.tool, "ok": out.ok,
-            "incomplete": out.incomplete, "duration_ms": out.duration_ms,
-            "assets": len(out.assets), "observations": len(out.observations),
+            "stage": stage_name, "tool": out.tool, "ok": out.ok, "incomplete": out.incomplete,
+            "duration_ms": out.duration_ms, "assets": len(out.assets),
+            "services": len(out.services), "observations": len(out.observations),
             "stderr_excerpt": out.stderr_excerpt[:500], "note": out.note,
         })
         incomplete = incomplete or out.incomplete or not out.ok
         for a in out.assets:
             if a.kind == "HOSTNAME" and a.value not in discovered_hosts:
                 discovered_hosts.append(a.value)
+        for o in out.observations:
+            if o.kind == "TECH" and o.key == "web-port" and o.value not in web_probes:
+                web_probes.append(o.value)
 
-    # --- persist results ------------------------------------------------
+    # --- persist results ----------------------------------------------
     with SessionLocal() as db:
-        execution = db.get(ScanExecution, execution_id)
-        if execution.state in {"CANCELLED", "TIMED_OUT", "FAILED"}:
-            return execution.state
+        ex = db.get(ScanExecution, execution_id)
+        if ex.state in TERMINAL:
+            return ex.state
 
-        execution.stages = stage_meta
-        execution.tool_versions = tool_versions
-        execution.normalized_args = normalized_args
-        execution.parser_version = "2"
+        ex.stages = stage_meta
+        ex.tool_versions = tool_versions
+        ex.normalized_args = normalized_args
+        ex.parser_version = "3"
 
         try:
-            summary = apply_stage_outputs(db, execution, stage_outputs)
-        except Exception as exc:  # noqa: BLE001 - parser must not crash the worker
+            summary = apply_stage_outputs(db, ex, stage_outputs)
+        except Exception as exc:  # noqa: BLE001 - a parser must not crash the worker
             db.rollback()
-            execution = db.get(ScanExecution, execution_id)
-            ScanService.transition(db, execution, "FAILED", actor="system:worker",
+            ex = db.get(ScanExecution, execution_id)
+            ScanService.transition(db, ex, "FAILED", actor="system:worker",
                                    reason=f"normalization error: {exc}")
             db.commit()
             return "FAILED"
 
-        if execution.cancel_requested:
-            ScanService.transition(db, execution, "CANCELLING", actor="system:worker",
-                                   reason=execution.cancel_reason or "cancelled")
-            execution.partial = True
-            ScanService.transition(db, execution, "CANCELLED", actor="system:worker",
+        deadline = _aware(ex.runtime_deadline_at)
+        timed_out = bool(deadline and _now() > deadline)
+
+        if timed_out:
+            ex.partial = True
+            ScanService.transition(db, ex, "TIMED_OUT", actor="system:worker",
+                                   reason="maximum runtime reached", extra_payload=summary)
+            AuditService.append(db, actor="system:worker", action="SCAN_TERMINATED",
+                                object_type="scan_execution", object_id=ex.id,
+                                payload={"reason": "TIMED_OUT"})
+            db.commit()
+            return "TIMED_OUT"
+
+        if ex.cancel_requested:
+            ScanService.transition(db, ex, "CANCELLING", actor="system:worker",
+                                   reason=ex.cancel_reason or "cancelled")
+            ex.partial = True
+            ScanService.transition(db, ex, "CANCELLED", actor="system:worker",
                                    extra_payload=summary)
             db.commit()
             return "CANCELLED"
 
-        execution.partial = incomplete
-        ScanService.transition(
-            db, execution, "COMPLETED", actor="system:worker",
-            extra_payload={**summary, "partial": incomplete},
-        )
+        ex.partial = incomplete
+        ScanService.transition(db, ex, "COMPLETED", actor="system:worker",
+                               extra_payload={**summary, "partial": incomplete})
         AuditService.append(
             db, actor="system:worker", action="SCAN_RESULTS_NORMALIZED",
-            object_type="scan_execution", object_id=execution.id,
+            object_type="scan_execution", object_id=ex.id,
             payload={**summary, "tool_versions": tool_versions,
                      "stages": [m["stage"] for m in stage_meta]},
         )
         db.commit()
         return "COMPLETED"
-
-
-def now() -> dt.datetime:
-    return dt.datetime.now(dt.timezone.utc)

@@ -237,6 +237,68 @@ class ScanExecution(Base):
     target: Mapped[Target] = relationship()
 
 
+class ScanApproval(Base):
+    __tablename__ = "scan_approvals"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("scan_executions.id"), nullable=False
+    )
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    schedule_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("schedules.id"))
+    occurrence_id: Mapped[str | None] = mapped_column(String(36))
+    profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    attestation_text: Mapped[str] = mapped_column(Text, nullable=False)
+    requested_options: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Canonical scope decision captured when the request was created (PRD 6.4.8).
+    scope_at_request: Mapped[dict] = mapped_column(JSON, default=dict)
+    # AWAITING_APPROVAL | APPROVED | DENIED | EXPIRED
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="AWAITING_APPROVAL")
+    decided_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Service(Base):
+    __tablename__ = "services"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    asset_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("assets.id"))
+    execution_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("scan_executions.id"))
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    protocol: Mapped[str] = mapped_column(String(8), nullable=False, default="tcp")
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    product: Mapped[str] = mapped_column(String(128), default="")
+    version: Mapped[str] = mapped_column(String(128), default="")
+    confidence: Mapped[str] = mapped_column(String(16), default="")
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("target_id", "asset_id", "port", "protocol", name="uq_service"),
+    )
+
+
+class EmergencyStop(Base):
+    __tablename__ = "emergency_stops"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    requested_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # ALL | SELECTED
+    target_scope: Mapped[str] = mapped_column(String(12), nullable=False, default="ALL")
+    execution_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # REQUESTED | CONFIRMED | FAILED | CLEARED
+    state: Mapped[str] = mapped_column(String(12), nullable=False, default="REQUESTED")
+    note: Mapped[str] = mapped_column(String(512), default="")
+    cleared_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    cleared_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Observation(Base):
     __tablename__ = "observations"
 

@@ -16,7 +16,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Notification, ScanExecution, Schedule, ScheduleOccurrence, User
+from ..models import (
+    Notification,
+    ScanApproval,
+    ScanExecution,
+    Schedule,
+    ScheduleOccurrence,
+    User,
+)
 from .audit_service import AuditService
 from .execution_service import TERMINAL
 
@@ -126,10 +133,41 @@ def tick(db: Session, *, enqueue) -> dict:
                 )
                 db.commit()
                 enqueue(execution.id)
-            else:  # ACTIVE — never auto-run; wait for a fresh approval (PRD 8.2)
+            elif compute_options_hash(sched) != (sched.options_hash or ""):
+                # Attestation-relevant fields changed since attestation (PRD 8.2).
+                occ.state = "DENIED"
+                occ.note = "stored attestation invalidated by a configuration change"
+                AuditService.append(
+                    db, actor="system:scheduler", action="SCHEDULE_ATTESTATION_INVALIDATED",
+                    object_type="schedule", object_id=sched.id, payload={},
+                )
+            else:  # ACTIVE — never auto-run; create a fresh approval request (PRD 8.2)
+                execution = ScanExecution(
+                    target_id=sched.target_id, requested_by_id=sched.created_by_id,
+                    schedule_id=sched.id, profile=sched.profile, classification="ACTIVE",
+                    state="DRAFT", options=sched.options or {},
+                )
+                db.add(execution)
+                db.flush()
+                execution.state = "AWAITING_APPROVAL"
+                approval = ScanApproval(
+                    execution_id=execution.id, target_id=sched.target_id,
+                    requested_by_id=sched.created_by_id, schedule_id=sched.id,
+                    occurrence_id=occ.id, profile=sched.profile,
+                    attestation_text=sched.attestation_text or "(scheduled attestation)",
+                    requested_options=sched.options or {}, scope_at_request={},
+                    state="AWAITING_APPROVAL",
+                )
+                db.add(approval)
                 occ.state = "AWAITING_APPROVAL"
+                occ.execution_id = execution.id
                 occ.note = "active occurrence paused pending administrator approval"
                 paused += 1
+                AuditService.append(
+                    db, actor="system:scheduler", action="APPROVAL_REQUESTED",
+                    object_type="scan_approval", object_id=approval.id,
+                    payload={"execution_id": execution.id, "via": "schedule", "schedule_id": sched.id},
+                )
                 for admin in db.execute(
                     select(User).where(User.role == "ADMINISTRATOR")
                 ).scalars():

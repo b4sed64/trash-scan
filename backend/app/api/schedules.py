@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..constants import ACTIVE_SCAN_ATTESTATION
 from ..db import get_db
 from ..models import Schedule, ScheduleOccurrence, User
 from ..services import AuditService, AuthorizationService
@@ -24,12 +25,13 @@ router = APIRouter(tags=["schedules"])
 
 
 class ScheduleCreate(BaseModel):
-    profile: str = Field(default="PASSIVE", pattern=r"^PASSIVE$")
+    profile: str = Field(default="PASSIVE", pattern=r"^(PASSIVE|SAFE_ACTIVE|STANDARD_ACTIVE)$")
     recurrence: str = Field(pattern=r"^(INTERVAL|DAILY)$")
     interval_minutes: int | None = Field(default=None, ge=15, le=10080)
     at_time: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     timezone: str = "UTC"
     overlap_policy: str = Field(default="SKIP", pattern=r"^(SKIP|ALLOW)$")
+    attestation_text: str | None = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -85,11 +87,25 @@ def create_schedule(target_id: str, body: ScheduleCreate, user: User = Depends(g
     if not target.is_active:
         raise HTTPException(status.HTTP_409_CONFLICT, "target is archived")
 
+    is_active_profile = body.profile != "PASSIVE"
+    if is_active_profile:
+        if user.role != ROLE_ADMIN:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                "only an administrator may create an active schedule")
+        if (body.attestation_text or "").strip() != ACTIVE_SCAN_ATTESTATION:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "active schedules require the exact ethical-use attestation text")
+
+    now = dt.datetime.now(dt.timezone.utc)
     schedule = Schedule(
-        target_id=target.id, created_by_id=user.id, profile="PASSIVE", classification="PASSIVE",
+        target_id=target.id, created_by_id=user.id, profile=body.profile,
+        classification="ACTIVE" if is_active_profile else "PASSIVE",
         recurrence=body.recurrence, interval_minutes=body.interval_minutes,
         at_time=body.at_time, timezone=body.timezone, overlap_policy=body.overlap_policy,
-        options={}, enabled=True, created_at=dt.datetime.now(dt.timezone.utc),
+        options={}, enabled=True, created_at=now,
+        attestation_text=ACTIVE_SCAN_ATTESTATION if is_active_profile else None,
+        attested_by_id=user.id if is_active_profile else None,
+        attested_at=now if is_active_profile else None,
     )
     schedule.options_hash = compute_options_hash(schedule)
     schedule.next_run_at = next_run_after(schedule, dt.datetime.now(dt.timezone.utc))
@@ -98,7 +114,8 @@ def create_schedule(target_id: str, body: ScheduleCreate, user: User = Depends(g
     AuditService.append(
         db, actor=f"user:{user.username}", action="SCHEDULE_CREATED",
         object_type="schedule", object_id=schedule.id,
-        payload={"target_id": target.id, "profile": "PASSIVE", "recurrence": body.recurrence,
+        payload={"target_id": target.id, "profile": body.profile,
+                 "classification": schedule.classification, "recurrence": body.recurrence,
                  "interval_minutes": body.interval_minutes, "at_time": body.at_time,
                  "next_run_at": schedule.next_run_at.isoformat()},
     )

@@ -147,6 +147,54 @@ export interface OccurrenceRow {
   note: string;
 }
 
+export interface ServiceRow {
+  id: string;
+  asset_id: string | null;
+  port: number;
+  protocol: string;
+  state: string;
+  product: string;
+  version: string;
+  confidence: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface Approval {
+  id: string;
+  execution_id: string;
+  state: string;
+  profile: string;
+  target: { id: string; value: string; kind: string } | null;
+  requested_by: string | null;
+  attestation_text: string;
+  requested_options: Record<string, unknown>;
+  scope_at_request: {
+    allowed?: boolean;
+    reason?: string;
+    resolved_addresses?: string[];
+    matched_deny_rule?: string | null;
+  };
+  created_at: string;
+  expires_at: string | null;
+  decided_by_id: string | null;
+  decided_at: string | null;
+  decision_reason: string | null;
+  execution_state: string | null;
+  schedule_id: string | null;
+}
+
+export interface EmergencyStopStatus {
+  active: {
+    id: string;
+    state: string;
+    target_scope: string;
+    note: string;
+    requested_at: string;
+  } | null;
+  history: { id: string; state: string; note: string; requested_at: string }[];
+}
+
 export interface NotificationItem {
   id: string;
   kind: string;

@@ -8,18 +8,32 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from ..constants import ACTIVE_SCAN_ATTESTATION
 from ..db import get_db
-from ..models import Asset, AuditEvent, Observation, ScanExecution, User
+from ..models import (
+    Asset,
+    AuditEvent,
+    Notification,
+    Observation,
+    ScanApproval,
+    ScanExecution,
+    Service,
+    User,
+)
+from ..scan_profiles import ACTIVE_PROFILES, RATE_CHOICES, profile_for, resolve_rate
 from ..services import AuditService, AuthorizationService
 from ..services.authorization_service import PermissionDenied, ROLE_ADMIN
 from ..services.execution_service import TERMINAL, ScanService
+from ..services.scope_db import evaluate_target_scope
 from .deps import get_current_user, require_csrf
 
 router = APIRouter(tags=["scans"])
 
 
 class CreateScan(BaseModel):
-    profile: str = Field(default="PASSIVE", pattern=r"^PASSIVE$")
+    profile: str = Field(default="PASSIVE", pattern=r"^(PASSIVE|SAFE_ACTIVE|STANDARD_ACTIVE)$")
+    attestation_text: str | None = None
+    rate_choice: str = Field(default="CONSERVATIVE", pattern=r"^(CONSERVATIVE|MODERATE)$")
 
 
 class CancelScan(BaseModel):
@@ -75,22 +89,84 @@ def create_scan(target_id: str, body: CreateScan, user: User = Depends(get_curre
         raise HTTPException(status.HTTP_409_CONFLICT, "target is archived")
 
     now = dt.datetime.now(dt.timezone.utc)
+    profile = profile_for(body.profile)
+
+    if profile.classification == "PASSIVE":
+        execution = ScanExecution(
+            target_id=target.id, requested_by_id=user.id, profile="PASSIVE",
+            classification="PASSIVE", state="QUEUED", queued_at=now,
+        )
+        db.add(execution)
+        db.flush()
+        AuditService.append(
+            db, actor=f"user:{user.username}", action="SCAN_STATE_CHANGE",
+            object_type="scan_execution", object_id=execution.id,
+            payload={"from": "DRAFT", "to": "QUEUED", "profile": "PASSIVE"},
+        )
+        db.commit()
+        from ..worker.tasks import run_execution
+
+        run_execution.delay(execution.id)
+        return _execution_dto(db.get(ScanExecution, execution.id))
+
+    # --- active scan request (PRD §8.1) --------------------------------
+    if (body.attestation_text or "").strip() != ACTIVE_SCAN_ATTESTATION:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "active scans require the exact ethical-use attestation text",
+        )
+
+    decision = evaluate_target_scope(db, target)
+    if decision.matched_deny_rule:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"target rejected by policy: {decision.reason}")
+    if not decision.allowed:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"target is outside approved active scope: {decision.reason}")
+
+    options = {
+        "ports": None,  # resolved from config at launch unless an admin overrides
+        "rate_choice": body.rate_choice,
+        "rate_per_second": resolve_rate(body.rate_choice, RATE_CHOICES["CONSERVATIVE"]),
+        "syn": profile.nmap_syn,
+        "os_detection": profile.nmap_os_detection,
+    }
+
     execution = ScanExecution(
-        target_id=target.id, requested_by_id=user.id, profile="PASSIVE",
-        classification="PASSIVE", state="QUEUED", queued_at=now,
+        target_id=target.id, requested_by_id=user.id, profile=body.profile,
+        classification="ACTIVE", state="DRAFT", options=options,
     )
     db.add(execution)
     db.flush()
-    AuditService.append(
-        db, actor=f"user:{user.username}", action="SCAN_STATE_CHANGE",
-        object_type="scan_execution", object_id=execution.id,
-        payload={"from": "DRAFT", "to": "QUEUED", "profile": "PASSIVE"},
+    ScanService.transition(db, execution, "AWAITING_APPROVAL", actor=f"user:{user.username}",
+                           extra_payload={"profile": body.profile})
+
+    approval = ScanApproval(
+        execution_id=execution.id, target_id=target.id, requested_by_id=user.id,
+        profile=body.profile, attestation_text=ACTIVE_SCAN_ATTESTATION,
+        requested_options=options, scope_at_request=decision.as_audit_payload(),
+        state="AWAITING_APPROVAL",
     )
+    db.add(approval)
+    db.flush()
+
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="ATTESTATION_SUBMITTED",
+        object_type="scan_approval", object_id=approval.id,
+        payload={"profile": body.profile, "attestation": ACTIVE_SCAN_ATTESTATION},
+    )
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="APPROVAL_REQUESTED",
+        object_type="scan_approval", object_id=approval.id,
+        payload={"execution_id": execution.id, "scope": decision.as_audit_payload()},
+    )
+    for admin in db.execute(select(User).where(User.role == ROLE_ADMIN)).scalars():
+        db.add(Notification(
+            user_id=admin.id, kind="APPROVAL_PENDING",
+            title="Active scan awaiting approval",
+            body=f"{user.username} requested {body.profile} on {target.value}",
+        ))
     db.commit()
-
-    from ..worker.tasks import run_execution
-
-    run_execution.delay(execution.id)
     return _execution_dto(db.get(ScanExecution, execution.id))
 
 
@@ -159,6 +235,25 @@ def list_observations(target_id: str, user: User = Depends(get_current_user),
             "first_seen_at": o.first_seen_at, "last_seen_at": o.last_seen_at,
         }
         for o in rows
+    ]
+
+
+@router.get("/api/targets/{target_id}/services")
+def list_services(target_id: str, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)) -> list[dict]:
+    _access_or_404(db, user, target_id)
+    rows = db.execute(
+        select(Service).where(Service.target_id == target_id)
+        .order_by(Service.asset_id, Service.port)
+    ).scalars().all()
+    return [
+        {
+            "id": s.id, "asset_id": s.asset_id, "port": s.port, "protocol": s.protocol,
+            "state": s.state, "product": s.product, "version": s.version,
+            "confidence": s.confidence, "first_seen_at": s.first_seen_at,
+            "last_seen_at": s.last_seen_at,
+        }
+        for s in rows
     ]
 
 

@@ -12,28 +12,36 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Pinned scanner tool versions.
 ARG SUBFINDER_VERSION=2.6.6
 ARG DNSX_VERSION=1.2.1
+ARG HTTPX_VERSION=1.6.9
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl unzip ca-certificates dumb-init \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends \
+       curl unzip ca-certificates dumb-init nmap \
+    && rm -rf /var/lib/apt/lists/* \
+    && nmap --version | head -1
 
 # --- pinned ProjectDiscovery tools, checksum-verified ---------------------
+# httpx is installed as /usr/local/bin/httpx-pd to avoid clashing with the
+# Python `httpx` client CLI (PRD §12.4).
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in amd64) pd_arch=amd64 ;; arm64) pd_arch=arm64 ;; *) echo "unsupported arch $arch"; exit 1 ;; esac; \
     cd /tmp; \
-    for tool_spec in "subfinder:${SUBFINDER_VERSION}" "dnsx:${DNSX_VERSION}"; do \
-      tool="${tool_spec%%:*}"; ver="${tool_spec##*:}"; \
+    for tool_spec in "subfinder:${SUBFINDER_VERSION}:subfinder" "dnsx:${DNSX_VERSION}:dnsx" "httpx:${HTTPX_VERSION}:httpx-pd"; do \
+      tool="$(echo "$tool_spec" | cut -d: -f1)"; \
+      ver="$(echo "$tool_spec" | cut -d: -f2)"; \
+      dest="$(echo "$tool_spec" | cut -d: -f3)"; \
       base="https://github.com/projectdiscovery/${tool}/releases/download/v${ver}"; \
       zip="${tool}_${ver}_linux_${pd_arch}.zip"; \
       curl -fsSL -o "$zip" "${base}/${zip}"; \
       curl -fsSL -o "${tool}_checksums.txt" "${base}/${tool}_${ver}_checksums.txt"; \
       grep " ${zip}\$" "${tool}_checksums.txt" | sha256sum -c -; \
-      unzip -o "$zip" "${tool}" -d /usr/local/bin; \
-      chmod +x "/usr/local/bin/${tool}"; \
+      unzip -o "$zip" "${tool}" -d /tmp/pd; \
+      mv "/tmp/pd/${tool}" "/usr/local/bin/${dest}"; \
+      chmod +x "/usr/local/bin/${dest}"; \
       rm -f "$zip" "${tool}_checksums.txt"; \
     done; \
-    subfinder -version; dnsx -version
+    subfinder -version; dnsx -version; httpx-pd -version
 
 WORKDIR /app
 

@@ -21,8 +21,11 @@ TERMINAL = {"COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"
 ALLOWED: dict[str, set[str]] = {
     "DRAFT": {"AWAITING_APPROVAL", "QUEUED", "CANCELLED"},
     "AWAITING_APPROVAL": {"APPROVED", "DENIED", "CANCELLED", "EXPIRED"},
-    "APPROVED": {"QUEUED", "CANCELLED", "EXPIRED"},
-    "QUEUED": {"RUNNING", "CANCELLED", "EXPIRED", "CANCELLING"},
+    # FAILED from APPROVED/QUEUED covers a pre-launch scope re-check failure
+    # (PRD §6.4 / §24): the execution never reaches a tool but must still land in
+    # an accurate terminal state.
+    "APPROVED": {"QUEUED", "CANCELLED", "EXPIRED", "FAILED"},
+    "QUEUED": {"RUNNING", "CANCELLED", "EXPIRED", "CANCELLING", "FAILED"},
     "RUNNING": {"COMPLETED", "FAILED", "CANCELLING", "TIMED_OUT"},
     "CANCELLING": {"CANCELLED", "FAILED"},
     "COMPLETED": set(),

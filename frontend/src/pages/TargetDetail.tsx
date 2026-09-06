@@ -7,9 +7,14 @@ import {
   ObservationRow,
   OccurrenceRow,
   ScheduleRow,
+  ServiceRow,
   Target,
   TimelineEntry,
 } from "../api";
+
+const ACTIVE_ATTESTATION =
+  "I attest this scan is authorized and will be used only for ethical, " +
+  "non-exploitative reconnaissance";
 import { useAuth } from "../auth";
 import { stateBadge } from "./Scans";
 
@@ -39,7 +44,13 @@ export function TargetDetail() {
   const [scope, setScope] = useState<ScopePreview | null>(null);
   const [scans, setScans] = useState<Execution[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
+  const [services, setServices] = useState<ServiceRow[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [active, setActive] = useState({
+    profile: "SAFE_ACTIVE",
+    rate_choice: "CONSERVATIVE",
+    attestation_text: "",
+  });
   const [schedules, setSchedules] = useState<ScheduleRow[]>([]);
   const [occurrences, setOccurrences] = useState<Record<string, OccurrenceRow[]>>({});
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -60,6 +71,7 @@ export function TargetDetail() {
     setScope(await api.get<ScopePreview>(`/api/targets/${id}/scope-preview`));
     setScans((await api.get<Execution[]>("/api/scans")).filter((s) => s.target_id === id));
     setObservations(await api.get<ObservationRow[]>(`/api/targets/${id}/observations`));
+    setServices(await api.get<ServiceRow[]>(`/api/targets/${id}/services`));
     setTimeline(await api.get<TimelineEntry[]>(`/api/targets/${id}/timeline`));
     const sl = await api.get<ScheduleRow[]>(`/api/targets/${id}/schedules`);
     setSchedules(sl);
@@ -91,6 +103,22 @@ export function TargetDetail() {
       setError(e instanceof ApiError ? e.message : "Could not queue passive discovery");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function requestActive(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    try {
+      await api.post(`/api/targets/${id}/scans`, {
+        profile: active.profile,
+        rate_choice: active.rate_choice,
+        attestation_text: active.attestation_text,
+      });
+      setActive({ ...active, attestation_text: "" });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not submit active scan request");
     }
   }
 
@@ -212,6 +240,88 @@ export function TargetDetail() {
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="card">
+        <h3>Request an active scan</h3>
+        <p className="notice">
+          Active scanning sends observable traffic. It requires this typed attestation and a
+          fresh administrator approval before anything runs. SYN scan and OS detection only
+          run where the deployment has proven raw-packet capability.
+        </p>
+        <form onSubmit={requestActive}>
+          <div className="row">
+            <div>
+              <label>Profile</label>
+              <select
+                value={active.profile}
+                onChange={(e) => setActive({ ...active, profile: e.target.value })}
+              >
+                <option value="SAFE_ACTIVE">Safe active</option>
+                <option value="STANDARD_ACTIVE">Standard active</option>
+              </select>
+            </div>
+            <div>
+              <label>Rate</label>
+              <select
+                value={active.rate_choice}
+                onChange={(e) => setActive({ ...active, rate_choice: e.target.value })}
+              >
+                <option value="CONSERVATIVE">Conservative</option>
+                <option value="MODERATE">Moderate</option>
+              </select>
+            </div>
+          </div>
+          <label htmlFor="att">Type exactly: “{ACTIVE_ATTESTATION}”</label>
+          <textarea
+            id="att"
+            rows={3}
+            value={active.attestation_text}
+            onChange={(e) => setActive({ ...active, attestation_text: e.target.value })}
+          />
+          <button
+            type="submit"
+            style={{ marginTop: "0.6rem" }}
+            disabled={active.attestation_text.trim() !== ACTIVE_ATTESTATION || !target.is_active}
+          >
+            Submit for approval
+          </button>
+        </form>
+      </section>
+
+      <section className="card">
+        <h3>Services ({services.length})</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Port</th>
+              <th>Proto</th>
+              <th>State</th>
+              <th>Product</th>
+              <th>Version</th>
+              <th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {services.map((s) => (
+              <tr key={s.id}>
+                <td>{s.port}</td>
+                <td>{s.protocol}</td>
+                <td>{s.state}</td>
+                <td>{s.product || "—"}</td>
+                <td>{s.version || "—"}</td>
+                <td className="muted">{s.confidence || "—"}</td>
+              </tr>
+            ))}
+            {services.length === 0 && (
+              <tr>
+                <td colSpan={6} className="muted">
+                  No services observed yet (run an approved active scan).
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </section>

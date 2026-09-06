@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { Admin } from "./pages/Admin";
 import { Audit } from "./pages/Audit";
 import { Dashboard } from "./pages/Dashboard";
+import { Approvals } from "./pages/Approvals";
 import { Login } from "./pages/Login";
 import { Scans } from "./pages/Scans";
 import { Setup } from "./pages/Setup";
@@ -25,6 +26,7 @@ export function App() {
         <Route path="/targets/:id" element={<TargetDetail />} />
         <Route path="/scans" element={<Scans />} />
         <Route path="/audit" element={<Audit />} />
+        {me.role === "ADMINISTRATOR" && <Route path="/approvals" element={<Approvals />} />}
         {me.role === "ADMINISTRATOR" && <Route path="/admin" element={<Admin />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

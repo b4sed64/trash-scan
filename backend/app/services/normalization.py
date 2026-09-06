@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Asset, Observation, ScanExecution
+from ..models import Asset, Observation, ScanExecution, Service
 from .scope_db import load_private_cidrs
 
 
@@ -78,6 +78,32 @@ def apply_stage_outputs(db: Session, execution: ScanExecution, stage_outputs) ->
         for disc in out.assets:
             upsert_asset(disc.kind, _clean(disc.value), disc.source)
 
+    services_added = services_updated = 0
+    for out in stage_outputs:
+        for svc in getattr(out, "services", []):
+            asset_id = upsert_asset("IP", _clean(svc.asset_value), out.tool)
+            existing = db.execute(
+                select(Service).where(
+                    Service.target_id == target_id, Service.asset_id == asset_id,
+                    Service.port == svc.port, Service.protocol == svc.protocol,
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.last_seen_at = now
+                existing.state = svc.state
+                existing.product = _clean(svc.product)
+                existing.version = _clean(svc.version)
+                existing.confidence = svc.confidence
+                services_updated += 1
+            else:
+                db.add(Service(
+                    target_id=target_id, asset_id=asset_id, execution_id=execution.id,
+                    port=svc.port, protocol=svc.protocol, state=svc.state,
+                    product=_clean(svc.product), version=_clean(svc.version),
+                    confidence=svc.confidence, first_seen_at=now, last_seen_at=now,
+                ))
+                services_added += 1
+
     seen_obs: set[tuple[str, str, str]] = set()
     for out in stage_outputs:
         for obs in out.observations:
@@ -115,6 +141,8 @@ def apply_stage_outputs(db: Session, execution: ScanExecution, stage_outputs) ->
     return {
         "assets_added": assets_added,
         "assets_updated": assets_updated,
+        "services_added": services_added,
+        "services_updated": services_updated,
         "observations_added": obs_added,
         "observations_updated": obs_updated,
     }

@@ -9,11 +9,15 @@ from __future__ import annotations
 import hashlib
 
 from .base import (
+    CLASSIFICATION_ACTIVE,
     CLASSIFICATION_PASSIVE,
     STAGE_DNSX,
+    STAGE_HTTPX,
+    STAGE_NMAP,
     STAGE_SUBFINDER,
     DiscoveredAsset,
     DiscoveredObservation,
+    DiscoveredService,
     StageInput,
     StageOutput,
 )
@@ -86,5 +90,71 @@ class FakeDnsxAdapter:
         return out
 
 
+class FakeNmapAdapter:
+    stage = STAGE_NMAP
+    classification = CLASSIFICATION_ACTIVE
+
+    def tool_version(self) -> str:
+        return FAKE_VERSION
+
+    def run(self, inp: StageInput) -> StageOutput:
+        out = StageOutput(stage=self.stage, ok=True, tool="nmap", tool_version=FAKE_VERSION,
+                          args=["-fake", "-sT", "-sV"])
+        ips = sorted({h for h in inp.hosts if _is_ipish(h)})
+        if not ips:
+            out.note = "no resolved in-scope IPs to scan"
+            return out
+        for ip in ips:
+            for port, product in ((22, "OpenSSH"), (80, "nginx"), (443, "nginx")):
+                if (_octet(ip, str(port)) % 4) == 0 and port != 22:
+                    continue
+                out.services.append(DiscoveredService(
+                    asset_value=ip, port=port, protocol="tcp", state="open",
+                    product=product, version="1.0", confidence="10",
+                ))
+                if port in (80, 443):
+                    out.observations.append(DiscoveredObservation(
+                        kind="TECH", key="web-port", value=f"{ip}:{port}", source="nmap",
+                        asset_value=ip,
+                    ))
+        if inp.profile == "STANDARD_ACTIVE":
+            out.observations.append(DiscoveredObservation(
+                kind="OSINT", key="os-guess", value="Linux 5.x (accuracy 90%)", source="nmap",
+                asset_value=ips[0],
+            ))
+        return out
+
+
+class FakeHttpxAdapter:
+    stage = STAGE_HTTPX
+    classification = CLASSIFICATION_ACTIVE
+
+    def tool_version(self) -> str:
+        return FAKE_VERSION
+
+    def run(self, inp: StageInput) -> StageOutput:
+        out = StageOutput(stage=self.stage, ok=True, tool="httpx", tool_version=FAKE_VERSION,
+                          args=["-fake", "-status-code", "-title"])
+        probes = sorted({h for h in inp.hosts if h})
+        if not probes:
+            out.note = "no approved hosts to probe"
+            return out
+        for probe in probes:
+            out.observations.append(DiscoveredObservation(
+                kind="HTTP_STATUS", key=f"http://{probe}", value="200", source="httpx",
+                asset_value=probe.split(":")[0],
+            ))
+            out.observations.append(DiscoveredObservation(
+                kind="TITLE", key=probe, value="Lab service", source="httpx",
+                asset_value=probe.split(":")[0],
+            ))
+            out.observations.append(DiscoveredObservation(
+                kind="HTTP_HEADER", key="Server", value="nginx/1.25.0", source="httpx",
+                asset_value=probe.split(":")[0],
+            ))
+        return out
+
+
 def _is_ipish(v: str) -> bool:
+    v = v.split(":")[0]
     return all(part.isdigit() for part in v.split(".") if part) and v.count(".") == 3

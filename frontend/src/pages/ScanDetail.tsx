@@ -182,15 +182,25 @@ export function ScanDetail() {
       </section>
 
       <h3>Results per Host</h3>
-      {scan.hosts.map((h) => (
-        <section className="card" key={h.execution_id}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-            <h3 style={{ margin: 0 }}>
-              <Link to={`/targets/${h.target.id}`}>{h.target.value}</Link>{" "}
-              <span className="muted" style={{ fontSize: "0.8rem" }}>({h.target.kind})</span>
-            </h3>
+      {scan.hosts.map((h) => {
+        const attn = h.findings.filter(
+          (f) => (f.severity === "CRITICAL" || f.severity === "HIGH") && f.status !== "NOT_OBSERVED",
+        ).length;
+        return (
+        <details className="card host-card" key={h.execution_id} open={scan.hosts.length <= 3}>
+          <summary>
+            <span style={{ fontWeight: 600 }}>{h.target.value}</span>
+            <span className="muted" style={{ fontSize: "0.8rem" }}>({h.target.kind})</span>
             <span className={`badge ${stateBadge(h.state)} status-dot`}>{stateLabel(h.state)}</span>
-          </div>
+            <span className="muted" style={{ fontSize: "0.82rem", marginLeft: "auto" }}>
+              {h.findings.length} finding{h.findings.length === 1 ? "" : "s"}
+              {attn > 0 ? ` · ${attn} need attention` : ""}
+            </span>
+          </summary>
+          <div className="host-body">
+          <p style={{ margin: "0 0 0.6rem" }}>
+            <Link to={`/targets/${h.target.id}`}>Open target page →</Link>
+          </p>
           {h.error && <p className="error">{h.error}</p>}
 
           {(h.stages ?? []).length > 0 && (
@@ -305,8 +315,10 @@ export function ScanDetail() {
               </div>
             </>
           )}
-        </section>
-      ))}
+          </div>
+        </details>
+        );
+      })}
     </div>
   );
 }

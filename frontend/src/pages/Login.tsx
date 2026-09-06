@@ -2,7 +2,7 @@ import { FormEvent, useState } from "react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
 import { PasswordInput } from "../components/PasswordInput";
-import { RaccoonMark } from "../components/RaccoonMark";
+import { Raccoon } from "../components/Raccoon";
 
 export function Login() {
   const { login } = useAuth();
@@ -23,7 +23,7 @@ export function Login() {
   return (
     <div className="center-page" style={{ flexDirection: "column" }}>
       <div className="login-mark">
-        <RaccoonMark size={104} />
+        <Raccoon size={96} />
       </div>
       <form className="card" onSubmit={submit}>
         <h1 style={{ textAlign: "center", margin: "0 0 0.1rem" }}>Trash Scan</h1>

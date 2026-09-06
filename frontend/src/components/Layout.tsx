@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../auth";
 import { NotificationBell } from "./NotificationBell";
-import { RaccoonMark } from "./RaccoonMark";
+import { Raccoon } from "./Raccoon";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
@@ -18,7 +18,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <h1>Trash Scan</h1>
             <small>Authorized Recon</small>
           </div>
-          <RaccoonMark size={36} />
+          <Raccoon size={34} />
         </div>
 
         <Link to="/account" className="brand-account">

@@ -84,16 +84,18 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 - **Scans → Scan History** lists scan groups with compact **Start** / **Pause** / **Stop**
   controls (icon buttons) and a **Review** link to the **scan detail** page (`/scans/:id`),
   which has dashboard-style severity tiles, a findings-by-severity bar, and a per-host
-  breakdown (state, stages, findings, services, assets). A not-yet-started passive scan
-  shows as *READY*.
+  breakdown (state, stages, findings, services, assets). Each host block is a collapsible
+  card. A not-yet-started passive scan shows as *READY*.
 - **Approvals** — one row per scan; multi-target scans show every target and are approved
   once. Approving no longer runs the scan (except scheduled occurrences); the requester
   presses Start.
 - **Your Account** (`/account`, reached from the sidebar) — change your own password.
 - **Administration → Port Sets** — define reusable named port selections.
-- Page headings and placeholder / button labels are title case; the login page and the
-  sidebar show the raccoon-head mark (also the favicon); password fields have a show/hide
-  toggle; every page carries a faint raccoon / raccoon-in-a-bin watermark (turned 45° CCW).
+- Page headings and placeholder / button labels are title case; the main content column is
+  centred in the space beside the sidebar; the login page and the sidebar show the raccoon
+  mark (the raccoon emoji, matching the favicon and the background watermark); password
+  fields have a show/hide toggle; every page carries a faint raccoon / raccoon-in-a-bin
+  watermark (turned 45° CCW).
 
 ## Tests
 

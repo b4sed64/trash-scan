@@ -110,8 +110,7 @@ label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(-
   border-right: 1px solid var(--border);
   padding: 1rem;
   flex-shrink: 0;
-  /* Sticky, viewport-height column: nav stays put and the raccoon watermark
-     stays anchored to the visible bottom-left on long pages. */
+  /* Sticky, viewport-height column so the nav stays put on long pages. */
   position: sticky;
   top: 0;
   height: 100vh;
@@ -132,7 +131,9 @@ label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(-
 .sidebar nav a:hover { background: var(--charcoal-sunk); }
 .sidebar nav a.active { background: var(--forest); color: #fff; }
 .sidebar .spacer { flex: 1; }
-.content { flex: 1; min-width: 0; padding: 1.5rem 2rem; max-width: 1180px; }
+/* margin:auto centres the content column in the space between the sidebar's
+   right edge and the window's right edge once that space exceeds max-width */
+.content { flex: 1; min-width: 0; padding: 1.5rem 2rem; max-width: 1180px; margin: 0 auto; }
 
 .card {
   background: var(--charcoal-raised);
@@ -140,6 +141,31 @@ label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(-
   border-radius: 10px;
   padding: 1rem 1.2rem;
   margin-bottom: 1rem;
+}
+
+/* collapsible per-host result card on the scan detail page */
+details.host-card { padding: 0; overflow: hidden; }
+details.host-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.2rem;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+details.host-card > summary::-webkit-details-marker { display: none; }
+details.host-card > summary::before {
+  content: "\25B8";
+  color: var(--text-dim);
+  transition: transform 0.12s ease;
+}
+details.host-card[open] > summary::before { transform: rotate(90deg); }
+details.host-card > summary:hover { background: var(--charcoal-sunk); }
+details.host-card > .host-body {
+  padding: 0.2rem 1.2rem 1.1rem;
+  border-top: 1px solid var(--border);
 }
 
 table { width: 100%; border-collapse: collapse; }

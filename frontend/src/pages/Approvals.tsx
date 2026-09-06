@@ -78,7 +78,7 @@ export function Approvals() {
       </section>
 
       <section className="card">
-        <h3>Recent decisions</h3>
+        <h3>Recent Decisions</h3>
         <table>
           <thead>
             <tr>

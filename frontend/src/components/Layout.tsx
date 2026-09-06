@@ -2,7 +2,7 @@ import { type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../auth";
 import { NotificationBell } from "./NotificationBell";
-import { RaccoonMask } from "./Raccoon";
+import { Raccoon } from "./Raccoon";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
@@ -14,10 +14,10 @@ export function Layout({ children }: { children: ReactNode }) {
       </a>
       <aside className="sidebar">
         <div className="brand">
-          <RaccoonMask size={30} />
+          <Raccoon size={26} />
           <div>
             <h1>Trash Scan</h1>
-            <small>Authorized recon</small>
+            <small>Authorized Recon</small>
           </div>
         </div>
 
@@ -36,19 +36,19 @@ export function Layout({ children }: { children: ReactNode }) {
           <NavLink to="/targets">Targets</NavLink>
           <NavLink to="/scans">Scans</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/approvals">Approvals</NavLink>}
-          <NavLink to="/audit">Audit trail</NavLink>
+          <NavLink to="/audit">Logs</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/admin">Administration</NavLink>}
         </nav>
 
         <div className="spacer" />
 
         <button className="secondary" onClick={() => void logout()}>
-          Log out
+          Log Out
         </button>
 
-        <div className="sidebar-watermark" aria-hidden="true">
-          <RaccoonMask size={150} title="" />
-        </div>
+        <span className="sidebar-watermark" aria-hidden="true">
+          🦝
+        </span>
       </aside>
 
       <main className="content" id="main-content" tabIndex={-1}>

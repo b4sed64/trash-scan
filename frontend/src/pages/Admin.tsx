@@ -161,7 +161,7 @@ export function Admin() {
       </section>
 
       <section className="card">
-        <h3>Private scope (allowed RFC1918 ranges)</h3>
+        <h3>Private Scope (Allowed RFC1918 Ranges)</h3>
         <ul>
           {cidrs.map((c) => (
             <li key={c.id}>
@@ -199,7 +199,7 @@ export function Admin() {
       </section>
 
       <section className="card">
-        <h3>Deny rules</h3>
+        <h3>Deny Rules</h3>
         <p className="notice">
           Allow rules never override deny rules. Built-in government, military and healthcare rules
           reduce risk but cannot identify every prohibited organization.
@@ -273,7 +273,7 @@ export function Admin() {
       </section>
 
       <section className="card">
-        <h3>Tool &amp; template maintenance</h3>
+        <h3>Tool &amp; Template Maintenance</h3>
         <p className="notice">
           The application never updates tools or templates itself. Approving a proposal
           records the review; an operator then rebuilds the worker image and redeploys.

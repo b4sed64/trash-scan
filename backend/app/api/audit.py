@@ -28,14 +28,30 @@ def _event_dto(e: AuditEvent) -> dict:
     }
 
 
+def _payload_matches(payload: dict, needle: str) -> bool:
+    needle = needle.lower()
+    for value in (payload or {}).values():
+        if isinstance(value, str) and needle in value.lower():
+            return True
+        if isinstance(value, (int, float)) and needle == str(value).lower():
+            return True
+    return False
+
+
 @router.get("/events")
 def list_events(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    limit: int = Query(default=100, le=500),
+    limit: int = Query(default=200, le=1000),
     offset: int = Query(default=0, ge=0),
+    action: list[str] | None = Query(default=None),
+    q: str | None = Query(default=None, description="match object id, seq, or a payload value"),
+    order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
 ) -> list[dict]:
-    stmt = select(AuditEvent).order_by(AuditEvent.seq.desc())
+    events = db.execute(
+        select(AuditEvent).order_by(AuditEvent.seq.asc())
+    ).scalars().all()
+
     if user.role != ROLE_ADMIN:
         # Scanners see only events for their assigned targets (PRD 5.1).
         from ..models import Assignment
@@ -45,13 +61,33 @@ def list_events(
                 select(Assignment.target_id).where(Assignment.user_id == user.id)
             ).scalars()
         )
-        events = db.execute(stmt).scalars().all()
+        events = [
+            e for e in events if e.object_type == "target" and e.object_id in target_ids
+        ]
+
+    if action:
+        wanted = {a.upper() for a in action}
+        events = [e for e in events if e.action.upper() in wanted]
+
+    if q:
+        needle = q.strip()
         events = [
             e for e in events
-            if (e.object_type == "target" and e.object_id in target_ids)
+            if needle == str(e.seq)
+            or needle.lower() in (e.object_id or "").lower()
+            or _payload_matches(e.payload, needle)
         ]
-        return [_event_dto(e) for e in events[offset : offset + limit]]
-    return [_event_dto(e) for e in db.execute(stmt.limit(limit).offset(offset)).scalars()]
+
+    events.sort(key=lambda e: e.seq, reverse=(order == "desc"))
+    return [_event_dto(e) for e in events[offset : offset + limit]]
+
+
+@router.get("/actions")
+def list_actions(user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)) -> list[str]:
+    """Distinct action types, for building the filter UI."""
+    rows = db.execute(select(AuditEvent.action).distinct()).scalars().all()
+    return sorted(set(rows))
 
 
 @router.post("/verify", dependencies=[Depends(require_csrf), Depends(require_admin)])

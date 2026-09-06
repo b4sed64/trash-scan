@@ -47,7 +47,7 @@ export function Targets() {
 
       {isAdmin && (
         <form className="card" onSubmit={create}>
-          <h3>Add target</h3>
+          <h3>Add Target</h3>
           <label htmlFor="tv">IPv4 address, IPv4 CIDR, or domain</label>
           <input
             id="tv"
@@ -103,7 +103,7 @@ export function Targets() {
       )}
 
       <section className="card">
-        <h3>All visible targets</h3>
+        <h3>All Visible Targets</h3>
         <table>
           <thead>
             <tr>

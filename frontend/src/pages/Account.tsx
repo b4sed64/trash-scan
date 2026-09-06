@@ -34,7 +34,7 @@ export function Account() {
 
   return (
     <div>
-      <h2>Your account</h2>
+      <h2>Your Account</h2>
       <section className="card">
         <p className="muted">
           {me?.username} · {me?.role}
@@ -42,7 +42,7 @@ export function Account() {
       </section>
 
       <section className="card" style={{ maxWidth: 460 }}>
-        <h3>Change password</h3>
+        <h3>Change Password</h3>
         <form onSubmit={submit}>
           <label htmlFor="cur">Current password</label>
           <input

@@ -204,7 +204,7 @@ export function TargetDetail() {
 
       {target.attestation && (
         <section className="card">
-          <h3>Public-target authorization</h3>
+          <h3>Public-Target Authorization</h3>
           <p className="muted">
             Attested by user {target.attestation.by} at {target.attestation.at}
           </p>
@@ -213,7 +213,7 @@ export function TargetDetail() {
       )}
 
       <section className="card">
-        <h3>Active-scope check</h3>
+        <h3>Active-Scope Check</h3>
         {scope && (
           <>
             <p>
@@ -275,7 +275,7 @@ export function TargetDetail() {
       </section>
 
       <section className="card">
-        <h3>Request an active scan</h3>
+        <h3>Request an Active Scan</h3>
         <p className="notice">
           Active scanning sends observable traffic. It requires this typed attestation and a
           fresh administrator approval before anything runs. SYN scan and OS detection only
@@ -407,7 +407,7 @@ export function TargetDetail() {
 
       {comparison && (
         <section className="card">
-          <h3>Change since previous compatible scan</h3>
+          <h3>Change Since Previous Compatible Scan</h3>
           {!comparison.eligible ? (
             <p className="muted">
               {comparison.summary.note ?? "No compatible baseline scan yet."}
@@ -458,7 +458,7 @@ export function TargetDetail() {
       )}
 
       <section className="card">
-        <h3>Recent scans</h3>
+        <h3>Recent Scans</h3>
         <table>
           <thead>
             <tr>
@@ -532,7 +532,7 @@ export function TargetDetail() {
       </section>
 
       <section className="card">
-        <h3>Passive schedules</h3>
+        <h3>Passive Schedules</h3>
         <table>
           <thead>
             <tr>
@@ -631,7 +631,7 @@ export function TargetDetail() {
       </section>
 
       <section className="card">
-        <h3>Reports &amp; exports</h3>
+        <h3>Reports &amp; Exports</h3>
         <div className="row">
           <button onClick={() => void makeReport("PDF")}>Generate PDF report</button>
           <button className="secondary" onClick={() => void makeReport("CSV_ZIP")}>
@@ -742,7 +742,7 @@ export function TargetDetail() {
 
       {isAdmin && (
         <section className="card">
-          <h3>Danger zone</h3>
+          <h3>Danger Zone</h3>
           <button
             className="secondary"
             onClick={call(() => api.post(`/api/targets/${id}/archive`))}

@@ -18,10 +18,11 @@ from ..models import (
     ScanApproval,
     ScanExecution,
     Service,
+    Target,
     User,
 )
-from ..scan_profiles import ACTIVE_PROFILES, RATE_CHOICES, profile_for, resolve_rate
-from ..services import AuditService, AuthorizationService
+from ..scan_profiles import RATE_CHOICES, profile_for, resolve_rate
+from ..services import AuditService, AuthorizationService, ScopeError, canonicalize_target
 from ..services.authorization_service import PermissionDenied, ROLE_ADMIN
 from ..services.execution_service import TERMINAL, ScanService
 from ..services.scope_db import evaluate_target_scope
@@ -34,6 +35,12 @@ class CreateScan(BaseModel):
     profile: str = Field(default="PASSIVE", pattern=r"^(PASSIVE|SAFE_ACTIVE|STANDARD_ACTIVE)$")
     attestation_text: str | None = None
     rate_choice: str = Field(default="CONSERVATIVE", pattern=r"^(CONSERVATIVE|MODERATE)$")
+
+
+class CreateScanFlexible(CreateScan):
+    # Exactly one of these identifies the target to scan.
+    target_id: str | None = None
+    target_value: str | None = Field(default=None, max_length=256)
 
 
 class CancelScan(BaseModel):
@@ -80,11 +87,70 @@ def _visible_execution(db: Session, user: User, execution_id: str) -> ScanExecut
     return ex
 
 
+def _resolve_scan_target(db: Session, user: User, target_id: str | None,
+                         target_value: str | None) -> Target:
+    """Resolve the target to scan from an id or a typed host / IP / CIDR.
+
+    A typed value is canonicalised and matched against existing targets. If none
+    exists an administrator may create it on the fly (deny rules still apply); a
+    scanner cannot — they must be assigned a target an administrator defined.
+    """
+    if target_id:
+        return _access_or_404(db, user, target_id)
+    if not target_value or not target_value.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "provide a target to scan (choose one or type a host/IP/CIDR)")
+    try:
+        kind, canonical = canonicalize_target(target_value)
+    except ScopeError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+    existing = db.execute(
+        select(Target).where(Target.kind == kind, Target.value == canonical)
+    ).scalar_one_or_none()
+    if existing is not None:
+        return _access_or_404(db, user, existing.id)
+
+    if user.role != ROLE_ADMIN:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"{canonical} is not a defined target; ask an administrator to add and assign it",
+        )
+
+    target = Target(kind=kind, value=canonical, note="ad-hoc (created from a scan request)",
+                    created_by_id=user.id)
+    db.add(target)
+    db.flush()
+    decision = evaluate_target_scope(db, target)
+    if decision.matched_deny_rule:
+        db.rollback()
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"target rejected by policy: {decision.reason}")
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="TARGET_CREATED",
+        object_type="target", object_id=target.id,
+        payload={"kind": kind, "value": canonical, "is_public": False, "via": "scan_request"},
+    )
+    return target
+
+
+@router.post("/api/scans", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_csrf)])
+def create_scan_flexible(body: CreateScanFlexible, user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> dict:
+    target = _resolve_scan_target(db, user, body.target_id, body.target_value)
+    return _launch_scan(db, user, target, body)
+
+
 @router.post("/api/targets/{target_id}/scans", status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_csrf)])
 def create_scan(target_id: str, body: CreateScan, user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)) -> dict:
     target = _access_or_404(db, user, target_id)
+    return _launch_scan(db, user, target, body)
+
+
+def _launch_scan(db: Session, user: User, target: Target, body: CreateScan) -> dict:
     if not target.is_active:
         raise HTTPException(status.HTTP_409_CONFLICT, "target is archived")
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, Execution, FindingRow, ReportRow, Target } from "../api";
 import { useAuth } from "../auth";
-import { RaccoonMask } from "../components/Raccoon";
+import { Raccoon } from "../components/Raccoon";
 
 const SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
 const SEV_VAR: Record<string, string> = {
@@ -119,7 +119,7 @@ export function Dashboard() {
       </div>
 
       <section className="card">
-        <h3>Findings by severity</h3>
+        <h3>Findings by Severity</h3>
         {totalOpen === 0 ? (
           <p className="muted">No open findings across your targets.</p>
         ) : (
@@ -155,7 +155,7 @@ export function Dashboard() {
 
       <section className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3>Threats &amp; vulnerabilities</h3>
+          <h3>Threats &amp; Vulnerabilities</h3>
           <label style={{ margin: 0, display: "flex", gap: "0.4rem", alignItems: "center" }}>
             <input
               type="checkbox"
@@ -172,8 +172,11 @@ export function Dashboard() {
         </p>
         {visibleFindings.length === 0 ? (
           <div className="empty-state">
-            <RaccoonMask size={56} />
+            <Raccoon size={44} />
             <p>The bin's clean — nothing flagged yet. Run an approved active scan to surface findings.</p>
+            <p className="muted" style={{ fontSize: "0.85rem" }}>
+              🦝 keeps watch anyway.
+            </p>
           </div>
         ) : (
           <div style={{ overflowX: "auto" }}>
@@ -222,10 +225,10 @@ export function Dashboard() {
       </section>
 
       <section className="card">
-        <h3>Targets in your scope ({targets.length})</h3>
+        <h3>Targets in Your Scope ({targets.length})</h3>
         {targets.length === 0 ? (
           <div className="empty-state">
-            <RaccoonMask size={56} />
+            <Raccoon size={44} />
             <p>No targets in your scope yet — ask an administrator to assign one.</p>
           </div>
         ) : (
@@ -262,7 +265,7 @@ export function Dashboard() {
 
       <section className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3>Reports &amp; exports</h3>
+          <h3>Reports &amp; Exports</h3>
           <button onClick={() => void exportAllCsv()} disabled={busy}>
             {busy ? "Preparing…" : "Export all visible data (CSV .zip)"}
           </button>

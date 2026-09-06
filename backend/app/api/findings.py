@@ -45,6 +45,32 @@ def _finding_dto(f: Finding) -> dict:
     }
 
 
+@router.get("/api/findings")
+def list_all_findings(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    severity: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+) -> list[dict]:
+    """Findings across every target the requester may see, ranked by severity."""
+    visible = {t.id: t.value for t in AuthorizationService.visible_targets(db, user)}
+    rows = db.execute(
+        select(Finding).where(Finding.target_id.in_(list(visible) or ["__none__"]))
+    ).scalars().all()
+    if severity:
+        rows = [f for f in rows if f.severity == severity.upper()]
+    if status_filter:
+        rows = [f for f in rows if f.status == status_filter.upper()]
+    rows.sort(key=lambda f: (-severity_rank(f.severity), f.status != "OBSERVED", f.rule_id))
+    out = []
+    for f in rows:
+        dto = _finding_dto(f)
+        dto["target_id"] = f.target_id
+        dto["target_value"] = visible.get(f.target_id, "")
+        out.append(dto)
+    return out
+
+
 @router.get("/api/targets/{target_id}/findings")
 def list_findings(
     target_id: str,

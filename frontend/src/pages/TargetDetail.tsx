@@ -15,13 +15,6 @@ import {
   TimelineEntry,
 } from "../api";
 
-const SEV_CLASS: Record<string, string> = {
-  CRITICAL: "bad",
-  HIGH: "bad",
-  MEDIUM: "warn",
-  LOW: "warn",
-  INFO: "",
-};
 const CLASS_LABEL: Record<string, string> = {
   NEW: "bad",
   CHANGED: "warn",
@@ -384,7 +377,7 @@ export function TargetDetail() {
             {findings.map((f) => (
               <tr key={f.id}>
                 <td>
-                  <span className={`badge ${SEV_CLASS[f.severity] ?? ""}`}>{f.severity}</span>
+                  <span className={`sev-tag sev-${f.severity}`}>{f.severity}</span>
                 </td>
                 <td title={f.rule_id}>{f.name}</td>
                 <td>

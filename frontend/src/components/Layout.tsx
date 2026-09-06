@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { api, NotificationItem } from "../api";
 import { useAuth } from "../auth";
+import { RaccoonMask } from "./Raccoon";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
@@ -28,7 +29,13 @@ export function Layout({ children }: { children: ReactNode }) {
         Skip to main content
       </a>
       <aside className="sidebar">
-        <h1>🦝 Trash Scan</h1>
+        <div className="brand">
+          <RaccoonMask size={30} />
+          <div>
+            <h1>Trash Scan</h1>
+            <small>Authorized recon</small>
+          </div>
+        </div>
         <nav aria-label="Primary">
           <NavLink to="/" end>
             Dashboard
@@ -36,7 +43,7 @@ export function Layout({ children }: { children: ReactNode }) {
           <NavLink to="/targets">Targets</NavLink>
           <NavLink to="/scans">Scans</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/approvals">Approvals</NavLink>}
-          <NavLink to="/reports">Reports</NavLink>
+          <NavLink to="/reports">Findings &amp; reports</NavLink>
           <NavLink to="/audit">Audit trail</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/admin">Administration</NavLink>}
         </nav>
@@ -50,6 +57,9 @@ export function Layout({ children }: { children: ReactNode }) {
         <button className="secondary" onClick={() => void logout()}>
           Log out
         </button>
+        <div className="sidebar-watermark" aria-hidden="true">
+          <RaccoonMask size={170} title="" />
+        </div>
       </aside>
       <main className="content" id="main-content" tabIndex={-1}>
         {children}

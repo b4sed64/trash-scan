@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, NotificationItem, Target } from "../api";
+import { RaccoonMask } from "../components/Raccoon";
 
 export function Dashboard() {
   const [targets, setTargets] = useState<Target[]>([]);
@@ -26,9 +27,10 @@ export function Dashboard() {
       <section className="card">
         <h3>Targets in your scope ({targets.length})</h3>
         {targets.length === 0 ? (
-          <p className="muted">
-            No targets yet. A raccoon needs a bin to sort — ask an administrator to assign one.
-          </p>
+          <div className="empty-state">
+            <RaccoonMask size={56} />
+            <p>No targets in your scope yet — ask an administrator to assign one.</p>
+          </div>
         ) : (
           <table>
             <thead>

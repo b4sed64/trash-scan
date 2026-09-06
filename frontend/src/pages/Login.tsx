@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
+import { RaccoonMask } from "../components/Raccoon";
 
 export function Login() {
   const { login } = useAuth();
@@ -21,7 +22,13 @@ export function Login() {
   return (
     <div className="center-page">
       <form className="card" onSubmit={submit}>
-        <h1>🦝 Trash Scan</h1>
+        <div className="brand" style={{ justifyContent: "center", marginBottom: "0.5rem" }}>
+          <RaccoonMask size={44} variant="hero" />
+          <h1 style={{ fontSize: "1.4rem" }}>Trash Scan</h1>
+        </div>
+        <p className="muted" style={{ textAlign: "center", marginTop: 0 }}>
+          Authorized reconnaissance dashboard
+        </p>
         <label htmlFor="u">Username</label>
         <input id="u" value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="p">Password</label>

@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
+import { RaccoonMask } from "../components/Raccoon";
 
 export function Setup() {
   const { refresh } = useAuth();
@@ -22,8 +23,13 @@ export function Setup() {
   return (
     <div className="center-page">
       <form className="card" onSubmit={submit}>
-        <h1>🦝 First-run setup</h1>
-        <p className="muted">Create the initial administrator account.</p>
+        <div className="brand" style={{ justifyContent: "center", marginBottom: "0.5rem" }}>
+          <RaccoonMask size={44} variant="hero" />
+          <h1 style={{ fontSize: "1.3rem" }}>First-run setup</h1>
+        </div>
+        <p className="muted" style={{ textAlign: "center" }}>
+          Create the initial administrator account.
+        </p>
         <label htmlFor="u">Username</label>
         <input id="u" value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="p">Password (min 12 characters)</label>

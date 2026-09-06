@@ -182,6 +182,11 @@ class FakeNucleiAdapter:
                  "nginx/1.25.0"),
                 ("trashscan-nginx-default-page", "INFO", "Nginx Default Welcome Page", "body"),
             ]
+            if _octet(host, "git") % 2 == 1:
+                catalogue.append(
+                    ("trashscan-git-config-exposure", "MEDIUM", "Exposed .git/config",
+                     "[core] repositoryformatversion")
+                )
             if inp.profile == "STANDARD_ACTIVE":
                 # Broader profile surfaces one more indicator — makes NEW vs
                 # NOT_OBSERVED visible when alternating profiles in a demo.

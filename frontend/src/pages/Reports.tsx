@@ -1,18 +1,66 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, ReportRow } from "../api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { api, ApiError, Execution, FindingRow, ReportRow } from "../api";
+import { useAuth } from "../auth";
+import { RaccoonMask } from "../components/Raccoon";
+
+const SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
+const SEV_VAR: Record<string, string> = {
+  CRITICAL: "var(--sev-critical)",
+  HIGH: "var(--sev-high)",
+  MEDIUM: "var(--sev-medium)",
+  LOW: "var(--sev-low)",
+  INFO: "var(--sev-info)",
+};
+const ACTIVE_STATES = ["DRAFT", "AWAITING_APPROVAL", "APPROVED", "QUEUED", "RUNNING", "CANCELLING"];
+
+type AggFinding = FindingRow & { target_id?: string; target_value?: string };
 
 export function Reports() {
+  const { me } = useAuth();
+  const isAdmin = me?.role === "ADMINISTRATOR";
+
+  const [findings, setFindings] = useState<AggFinding[]>([]);
+  const [scans, setScans] = useState<Execution[]>([]);
+  const [targetCount, setTargetCount] = useState(0);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
   const [reports, setReports] = useState<ReportRow[]>([]);
+  const [hideNotObserved, setHideNotObserved] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(
-    () => api.get<ReportRow[]>("/api/reports").then(setReports).catch(() => undefined),
-    [],
-  );
+  const load = useCallback(async () => {
+    setFindings(await api.get<AggFinding[]>("/api/findings").catch(() => []));
+    setScans(await api.get<Execution[]>("/api/scans").catch(() => []));
+    setTargetCount((await api.get<unknown[]>("/api/targets").catch(() => [])).length);
+    setReports(await api.get<ReportRow[]>("/api/reports").catch(() => []));
+    if (isAdmin) {
+      const q = await api
+        .get<{ state: string }[]>("/api/approvals?include_decided=false")
+        .catch(() => []);
+      setPendingApprovals(q.filter((a) => a.state === "AWAITING_APPROVAL").length);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     void load();
+    const t = setInterval(() => void load(), 8000);
+    return () => clearInterval(t);
   }, [load]);
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+    for (const f of findings) if (f.status !== "NOT_OBSERVED") c[f.severity] = (c[f.severity] ?? 0) + 1;
+    return c;
+  }, [findings]);
+
+  const totalOpen = SEV_ORDER.reduce((n, s) => n + counts[s], 0);
+  const needsAttention = counts.CRITICAL + counts.HIGH;
+  const runningScans = scans.filter((s) => ACTIVE_STATES.includes(s.state)).length;
+
+  const visibleFindings = hideNotObserved
+    ? findings.filter((f) => f.status !== "NOT_OBSERVED")
+    : findings;
 
   async function exportAllCsv() {
     setBusy(true);
@@ -37,18 +85,154 @@ export function Reports() {
 
   return (
     <div>
-      <h2>Reports &amp; exports</h2>
+      <h2>Security overview</h2>
       {error && <p className="error">{error}</p>}
+
+      <div className="stat-row">
+        <div className="stat">
+          <div className="label">Open findings</div>
+          <div className="value">{totalOpen}</div>
+          <div className="sub">observed in the latest scans</div>
+        </div>
+        <div className={`stat ${needsAttention > 0 ? "alert" : ""}`}>
+          <div className="label">Needs attention</div>
+          <div className="value">{needsAttention}</div>
+          <div className="sub">critical + high severity</div>
+        </div>
+        <div className="stat">
+          <div className="label">Targets in scope</div>
+          <div className="value">{targetCount}</div>
+        </div>
+        <div className="stat">
+          <div className="label">Scans running</div>
+          <div className="value">{runningScans}</div>
+        </div>
+        {isAdmin && (
+          <div className={`stat ${pendingApprovals > 0 ? "alert" : ""}`}>
+            <div className="label">Pending approvals</div>
+            <div className="value">{pendingApprovals}</div>
+            <div className="sub">
+              <Link to="/approvals">review queue</Link>
+            </div>
+          </div>
+        )}
+      </div>
+
       <section className="card">
-        <button onClick={() => void exportAllCsv()} disabled={busy}>
-          {busy ? "Preparing…" : "Export all visible data (CSV .zip)"}
-        </button>
+        <h3>Findings by severity</h3>
+        {totalOpen === 0 ? (
+          <p className="muted">No open findings across your targets.</p>
+        ) : (
+          <>
+            <div
+              className="sev-bar"
+              role="img"
+              aria-label={SEV_ORDER.filter((s) => counts[s] > 0)
+                .map((s) => `${counts[s]} ${s.toLowerCase()}`)
+                .join(", ")}
+            >
+              {SEV_ORDER.map((s) =>
+                counts[s] > 0 ? (
+                  <span
+                    key={s}
+                    style={{ flexGrow: counts[s], background: SEV_VAR[s] }}
+                    title={`${s}: ${counts[s]}`}
+                  />
+                ) : null,
+              )}
+            </div>
+            <div className="sev-legend">
+              {SEV_ORDER.map((s) => (
+                <span key={s}>
+                  <span className="swatch" style={{ background: SEV_VAR[s] }} />
+                  {s[0] + s.slice(1).toLowerCase()}: <strong>{counts[s]}</strong>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3>Threats &amp; vulnerabilities</h3>
+          <label style={{ margin: 0, display: "flex", gap: "0.4rem", alignItems: "center" }}>
+            <input
+              type="checkbox"
+              style={{ width: "auto" }}
+              checked={hideNotObserved}
+              onChange={(e) => setHideNotObserved(e.target.checked)}
+            />
+            hide "not observed"
+          </label>
+        </div>
+        <p className="notice">
+          Automated indicators that require human validation, ranked by severity. "Not observed"
+          means the latest compatible scan did not see it — never that it is resolved.
+        </p>
+        {visibleFindings.length === 0 ? (
+          <div className="empty-state">
+            <RaccoonMask size={56} />
+            <p>Nothing flagged yet. Run an approved active scan to surface findings.</p>
+          </div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Finding</th>
+                  <th>Target</th>
+                  <th>Asset</th>
+                  <th>Status</th>
+                  <th>First seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleFindings.map((f) => (
+                  <tr key={f.id}>
+                    <td>
+                      <span className={`sev-tag sev-${f.severity}`}>{f.severity}</span>
+                    </td>
+                    <td>
+                      <Link to={`/targets/${f.target_id}`} title={f.rule_id}>
+                        {f.name}
+                      </Link>
+                      <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        {f.evidence_summary}
+                      </div>
+                    </td>
+                    <td>{f.target_value}</td>
+                    <td>
+                      {f.asset_value}
+                      {f.port ? `:${f.port}` : ""}
+                    </td>
+                    <td>
+                      <span className={`badge ${f.status === "NOT_OBSERVED" ? "ok" : ""}`}>
+                        {f.status.replace("_", " ")}
+                      </span>
+                    </td>
+                    <td className="muted">{new Date(f.first_seen_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3>Reports &amp; exports</h3>
+          <button onClick={() => void exportAllCsv()} disabled={busy}>
+            {busy ? "Preparing…" : "Export all visible data (CSV .zip)"}
+          </button>
+        </div>
         <p className="muted">
           CSV cells beginning with <code>= + - @</code> are neutralised. Exports respect your
-          target assignments and every download is recorded in the audit trail.
+          target assignments and every download is recorded in the audit trail. Generate a PDF
+          from a target's page.
         </p>
-      </section>
-      <section className="card">
         <table>
           <thead>
             <tr>
@@ -78,7 +262,7 @@ export function Reports() {
             {reports.length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
-                  No reports yet.
+                  No reports generated yet.
                 </td>
               </tr>
             )}

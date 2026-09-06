@@ -4,16 +4,16 @@ A self-hosted reconnaissance dashboard for a single student security team operat
 authorized virtual lab. See [`Trash_Scan_PRD.md`](Trash_Scan_PRD.md) for the full product
 definition.
 
-> **This repository implements Phases 1–3.** Passive discovery (Subfinder + dnsx) and
-> active scanning (Nmap TCP-connect + ProjectDiscovery httpx) run asynchronously through a
-> Celery worker against real, checksum/version-pinned tool binaries; set `SCANNER_MODE=fake`
-> for offline development. Every active execution needs a typed attestation and a fresh
-> administrator approval. SYN scan and OS detection stay disabled until the raw-packet
-> capability is proven (`TRASHSCAN_ALLOW_RAW_PACKET`). Nuclei, findings comparison and
-> reporting are later phases. See
-> [`docs/PHASE1_STATUS.md`](docs/PHASE1_STATUS.md),
-> [`docs/PHASE2_STATUS.md`](docs/PHASE2_STATUS.md) and
-> [`docs/PHASE3_STATUS.md`](docs/PHASE3_STATUS.md).
+> **This repository implements Phases 1–4.** Passive discovery (Subfinder + dnsx) and
+> active scanning (Nmap TCP-connect + ProjectDiscovery httpx + a restricted, hash-pinned
+> Nuclei template set) run asynchronously through a Celery worker against real,
+> checksum/version-pinned tool binaries; set `SCANNER_MODE=fake` for offline development.
+> Every active execution needs a typed attestation and a fresh administrator approval.
+> Findings are normalized with stable fingerprints and classified against a compatible
+> baseline (NEW / STILL_OBSERVED / CHANGED / NOT_OBSERVED). SYN scan and OS detection stay
+> disabled until the raw-packet capability is proven (`TRASHSCAN_ALLOW_RAW_PACKET`). PDF/CSV
+> reporting, retention cleanup and the tool-maintenance workflow are Phase 5. See the
+> per-phase notes in [`docs/`](docs/).
 
 ## Quick start (Docker Desktop on Windows)
 
@@ -62,7 +62,7 @@ session invalidation on account disable, and the fake adapter.
 | API | Python FastAPI (sync SQLAlchemy 2.0) | Implemented |
 | Database | PostgreSQL 16, Alembic migrations | Implemented |
 | Queue / scheduler | Redis + Celery (`worker`, `beat`) | Implemented |
-| Scan worker | Python + pinned CLI tools | Subfinder, dnsx, Nmap, httpx (real); Nuclei in Phase 4 |
+| Scan worker | Python + pinned CLI tools | Subfinder, dnsx, Nmap, httpx, restricted Nuclei (real) |
 | Reports | Jinja2 + WeasyPrint / CSV | **Deferred to Phase 5** |
 
 ### Security-critical modules (require human review on every change)

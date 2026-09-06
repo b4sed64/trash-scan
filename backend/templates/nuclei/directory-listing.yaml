@@ -1,0 +1,24 @@
+id: trashscan-directory-listing
+
+info:
+  name: Directory Listing Enabled
+  author: trash-scan
+  severity: low
+  description: The web server returns an auto-generated directory index, which can disclose file names and structure.
+  tags: exposure,misconfig
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Index of /"
+          - "Directory listing for /"
+        condition: or
+      - type: status
+        status:
+          - 200

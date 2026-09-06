@@ -1,0 +1,26 @@
+id: trashscan-phpinfo-exposure
+
+info:
+  name: Exposed phpinfo() Page
+  author: trash-scan
+  severity: medium
+  description: A phpinfo() page is reachable, disclosing PHP configuration, loaded modules, environment variables and paths.
+  tags: exposure,phpinfo,disclosure
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpinfo.php"
+      - "{{BaseURL}}/info.php"
+    stop-at-first-match: true
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "PHP Version"
+          - "<title>phpinfo()"
+        condition: and
+      - type: status
+        status:
+          - 200

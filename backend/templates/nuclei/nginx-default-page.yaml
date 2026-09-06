@@ -1,0 +1,24 @@
+id: trashscan-nginx-default-page
+
+info:
+  name: Nginx Default Welcome Page
+  author: trash-scan
+  severity: info
+  description: The default nginx welcome page is served, indicating an unconfigured or placeholder web server.
+  tags: exposure,tech,nginx
+  reference:
+    - https://nginx.org/
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Welcome to nginx!"
+      - type: status
+        status:
+          - 200

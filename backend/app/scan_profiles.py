@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .adapters.base import STAGE_DNSX, STAGE_HTTPX, STAGE_NMAP, STAGE_SUBFINDER
+from .adapters.base import (
+    STAGE_DNSX,
+    STAGE_HTTPX,
+    STAGE_NMAP,
+    STAGE_NUCLEI,
+    STAGE_SUBFINDER,
+)
 
 PASSIVE = "PASSIVE"
 SAFE_ACTIVE = "SAFE_ACTIVE"
@@ -39,13 +45,14 @@ PROFILES: dict[str, Profile] = {
     ),
     SAFE_ACTIVE: Profile(
         name=SAFE_ACTIVE, classification="ACTIVE",
-        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX),
+        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=False, nmap_os_detection=False,
-        description="TCP connect scan of common ports, light service metadata, HTTP inspection.",
+        description="TCP connect scan of common ports, light service metadata, HTTP inspection, "
+                    "reviewed low-impact Nuclei templates.",
     ),
     STANDARD_ACTIVE: Profile(
         name=STANDARD_ACTIVE, classification="ACTIVE",
-        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX),
+        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=True, nmap_os_detection=True,
         description=(
             "Broader TCP port set, service/version detection, HTTP inspection. "

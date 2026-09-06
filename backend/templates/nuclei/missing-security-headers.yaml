@@ -1,0 +1,24 @@
+id: trashscan-missing-security-headers
+
+info:
+  name: Missing HTTP Security Headers
+  author: trash-scan
+  severity: low
+  description: The HTTP response is missing one or more common security headers (X-Frame-Options, X-Content-Type-Options, Content-Security-Policy).
+  tags: misconfig,headers
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: dsl
+        dsl:
+          - "!contains(tolower(all_headers), 'x-frame-options')"
+          - "!contains(tolower(all_headers), 'x-content-type-options')"
+          - "!contains(tolower(all_headers), 'content-security-policy')"
+        condition: or

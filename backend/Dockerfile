@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ARG SUBFINDER_VERSION=2.6.6
 ARG DNSX_VERSION=1.2.1
 ARG HTTPX_VERSION=1.6.9
+ARG NUCLEI_VERSION=3.3.7
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -27,7 +28,7 @@ RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in amd64) pd_arch=amd64 ;; arm64) pd_arch=arm64 ;; *) echo "unsupported arch $arch"; exit 1 ;; esac; \
     cd /tmp; \
-    for tool_spec in "subfinder:${SUBFINDER_VERSION}:subfinder" "dnsx:${DNSX_VERSION}:dnsx" "httpx:${HTTPX_VERSION}:httpx-pd"; do \
+    for tool_spec in "subfinder:${SUBFINDER_VERSION}:subfinder" "dnsx:${DNSX_VERSION}:dnsx" "httpx:${HTTPX_VERSION}:httpx-pd" "nuclei:${NUCLEI_VERSION}:nuclei"; do \
       tool="$(echo "$tool_spec" | cut -d: -f1)"; \
       ver="$(echo "$tool_spec" | cut -d: -f2)"; \
       dest="$(echo "$tool_spec" | cut -d: -f3)"; \
@@ -41,7 +42,7 @@ RUN set -eux; \
       chmod +x "/usr/local/bin/${dest}"; \
       rm -f "$zip" "${tool}_checksums.txt"; \
     done; \
-    subfinder -version; dnsx -version; httpx-pd -version
+    subfinder -version; dnsx -version; httpx-pd -version; nuclei -version
 
 WORKDIR /app
 
@@ -51,6 +52,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+# Validate the immutable Nuclei template allowlist and its content-hash manifest
+# at build time; a bad template fails the build (PRD §12.5 / §12.6).
+RUN HOME=/tmp nuclei -validate -duc -t templates/nuclei \
+    && python -c "from app.adapters.nuclei import verify_template_set; import sys; ok,_,r=verify_template_set(__import__('pathlib').Path('templates/nuclei')); sys.exit(0 if ok else ('manifest mismatch: '+r))"
 
 RUN mkdir -p /app/artifacts && chown -R appuser:appuser /app
 USER appuser

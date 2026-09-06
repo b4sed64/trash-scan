@@ -58,6 +58,25 @@ class DiscoveredObservation:
 
 
 @dataclass(frozen=True)
+class DiscoveredFinding:
+    rule_id: str
+    template_hash: str
+    severity: str            # INFO | LOW | MEDIUM | HIGH | CRITICAL
+    name: str
+    description: str
+    asset_value: str
+    matched_at: str
+    matcher_name: str = ""
+    port: int | None = None
+    protocol: str = "tcp"
+    # A stable subset of the evidence used for the fingerprint (no timestamps or
+    # random response values) plus a bounded human-readable summary.
+    evidence_key: str = ""
+    evidence_summary: str = ""
+    evidence: dict | None = None
+
+
+@dataclass(frozen=True)
 class DiscoveredService:
     asset_value: str
     port: int
@@ -78,6 +97,7 @@ class StageOutput:
     assets: list[DiscoveredAsset] = field(default_factory=list)
     observations: list[DiscoveredObservation] = field(default_factory=list)
     services: list[DiscoveredService] = field(default_factory=list)
+    findings: list["DiscoveredFinding"] = field(default_factory=list)
     stdout_excerpt: str = ""
     stderr_excerpt: str = ""
     raw_path: str | None = None

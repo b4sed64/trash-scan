@@ -41,7 +41,7 @@ def test_passive_runner_completes_and_normalizes(db, lab):
     ex = db.get(ScanExecution, ex_id)
     assert ex.state == "COMPLETED"
     assert ex.tool_versions  # recorded for reproducibility (SCAN-10)
-    assert ex.parser_version == "3"
+    assert ex.parser_version == "4"
 
     assets = db.query(Asset).filter(Asset.target_id == lab["target"]).all()
     assert assets, "expected discovered assets"

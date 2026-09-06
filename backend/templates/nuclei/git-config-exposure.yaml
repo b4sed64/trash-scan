@@ -1,0 +1,29 @@
+id: trashscan-git-config-exposure
+
+info:
+  name: Exposed .git/config
+  author: trash-scan
+  severity: medium
+  description: A readable .git/config file is exposed, which can disclose repository URLs and enable source-code recovery.
+  tags: exposure,config,git
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.git/config"
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "[core]"
+          - "repositoryformatversion"
+        condition: and
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        negative: true
+        words:
+          - "text/html"

@@ -1,0 +1,24 @@
+id: trashscan-server-version-disclosure
+
+info:
+  name: Server Version Disclosure
+  author: trash-scan
+  severity: low
+  description: The Server response header discloses the web server product and version, aiding version-specific reconnaissance.
+  tags: disclosure,tech
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers:
+      - type: regex
+        part: header
+        regex:
+          - "(?i)^Server:\\s*\\S+/\\d+\\.\\d+"
+    extractors:
+      - type: regex
+        part: header
+        group: 1
+        regex:
+          - "(?i)Server:\\s*(\\S+/\\S+)"

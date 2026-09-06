@@ -1,0 +1,14 @@
+{
+  "_comment": "Immutable reviewed Nuclei template allowlist. sha256 of each file; the adapter refuses to run if a file does not match (PRD 12.5/12.6). Regenerate deliberately via scripts/gen_template_manifest.sh after review.",
+  "templates": {
+    "apache-default-page.yaml": "20a41eccdb4a341ec9e293011e5740c555893548ee65c6f527f287896d9f244e",
+    "basic-auth-exposed.yaml": "7608c23d9af1eb49941633d869f0b6e1f42e6b05ebf42c1aa5e25b758c34dcc4",
+    "directory-listing.yaml": "c5200eda55ac0b42a071554dd993a50815525faa57bdf147dae0dc90710686be",
+    "env-file-exposure.yaml": "6a79ccbc9d3768a8fbec3b68945649f32d2a598a2995bb2f3a6b09d3f05fcdf6",
+    "git-config-exposure.yaml": "12b857721fdb1d6461319c149b754582cb2e20f424b3fb98ba2f42b15e97db9a",
+    "missing-security-headers.yaml": "5082e683ce83e387fca44c92583c305982c699854df7479eef0681d4aa68d420",
+    "nginx-default-page.yaml": "f823393b7a9f04d17e12b8a9fde3187813320537291d4e63ed1259f7e3a16634",
+    "phpinfo-exposure.yaml": "97abb02e3618ad0bf4e8109c79d07639c24eb5fe7a0622ad2d18db45d87fadc1",
+    "server-version-disclosure.yaml": "1bf9a43d77202a6afa19afb08eb25371328410f957452e87f3f3c2ead407ddc8"
+  }
+}

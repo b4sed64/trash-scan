@@ -283,6 +283,74 @@ class Service(Base):
     )
 
 
+class Finding(Base):
+    __tablename__ = "findings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    asset_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("assets.id"))
+    service_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("services.id"))
+    # Stable identity (PRD §15.2): does not change on volatile evidence.
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_tool: Mapped[str] = mapped_column(String(32), nullable=False, default="nuclei")
+    rule_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    template_hash: Mapped[str] = mapped_column(String(64), default="")
+    # INFO | LOW | MEDIUM | HIGH | CRITICAL
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="INFO")
+    name: Mapped[str] = mapped_column(String(256), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    asset_value: Mapped[str] = mapped_column(String(256), default="")
+    port: Mapped[int | None] = mapped_column(Integer)
+    protocol: Mapped[str] = mapped_column(String(8), default="tcp")
+    matcher_name: Mapped[str] = mapped_column(String(128), default="")
+    evidence_summary: Mapped[str] = mapped_column(Text, default="")
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    # OBSERVED (seen in the most recent compatible scan) | NOT_OBSERVED
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OBSERVED")
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    first_execution_id: Mapped[str | None] = mapped_column(String(36))
+    last_execution_id: Mapped[str | None] = mapped_column(String(36))
+
+    __table_args__ = (UniqueConstraint("target_id", "fingerprint", name="uq_finding"),)
+
+
+class FindingSighting(Base):
+    __tablename__ = "finding_sightings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    finding_id: Mapped[str] = mapped_column(String(36), ForeignKey("findings.id"), nullable=False)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("scan_executions.id"), nullable=False
+    )
+    severity: Mapped[str] = mapped_column(String(10), default="INFO")
+    evidence_key: Mapped[str] = mapped_column(String(200), default="")
+    seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("finding_id", "execution_id", name="uq_finding_sighting"),
+    )
+
+
+class ScanComparison(Base):
+    __tablename__ = "scan_comparisons"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("scan_executions.id"), nullable=False
+    )
+    baseline_execution_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("scan_executions.id")
+    )
+    eligible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    limitations: Mapped[list] = mapped_column(JSON, default=list)
+    details: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("execution_id", name="uq_comparison_execution"),)
+
+
 class EmergencyStop(Base):
     __tablename__ = "emergency_stops"
 

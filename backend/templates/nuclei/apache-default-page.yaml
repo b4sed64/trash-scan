@@ -1,0 +1,25 @@
+id: trashscan-apache-default-page
+
+info:
+  name: Apache Default Test Page
+  author: trash-scan
+  severity: info
+  description: The default Apache "It works!" or test page is served, indicating an unconfigured web server.
+  tags: exposure,tech,apache
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "Apache2 Debian Default Page"
+          - "Apache2 Ubuntu Default Page"
+          - "<title>Test Page for the Apache HTTP Server"
+      - type: word
+        part: body
+        words:
+          - "<html><body><h1>It works!</h1></body></html>"

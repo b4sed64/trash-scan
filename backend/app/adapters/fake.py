@@ -14,8 +14,10 @@ from .base import (
     STAGE_DNSX,
     STAGE_HTTPX,
     STAGE_NMAP,
+    STAGE_NUCLEI,
     STAGE_SUBFINDER,
     DiscoveredAsset,
+    DiscoveredFinding,
     DiscoveredObservation,
     DiscoveredService,
     StageInput,
@@ -152,6 +154,44 @@ class FakeHttpxAdapter:
                 kind="HTTP_HEADER", key="Server", value="nginx/1.25.0", source="httpx",
                 asset_value=probe.split(":")[0],
             ))
+        return out
+
+
+class FakeNucleiAdapter:
+    stage = STAGE_NUCLEI
+    classification = CLASSIFICATION_ACTIVE
+
+    def tool_version(self) -> str:
+        return FAKE_VERSION
+
+    def run(self, inp: StageInput) -> StageOutput:
+        out = StageOutput(stage=self.stage, ok=True, tool="nuclei", tool_version=FAKE_VERSION,
+                          args=["-fake", "-t", "templates/nuclei"])
+        probes = sorted({h for h in inp.hosts if h})
+        if not probes:
+            out.note = "no approved hosts to probe"
+            return out
+        # A deterministic mix so comparison logic can be demonstrated.
+        drop = str(inp.options.get("_fake_findings_drop") or "")
+        for probe in probes:
+            host = probe.split(":")[0]
+            catalogue = [
+                ("trashscan-missing-security-headers", "LOW", "Missing HTTP Security Headers",
+                 "x-frame-options,content-security-policy"),
+                ("trashscan-server-version-disclosure", "LOW", "Server Version Disclosure",
+                 "nginx/1.25.0"),
+                ("trashscan-nginx-default-page", "INFO", "Nginx Default Welcome Page", "body"),
+            ]
+            for rule_id, sev, name, ev in catalogue:
+                if rule_id == drop:
+                    continue
+                out.findings.append(DiscoveredFinding(
+                    rule_id=rule_id, template_hash=f"fake-{rule_id}", severity=sev, name=name,
+                    description=name, asset_value=host, matched_at=f"http://{probe}/",
+                    matcher_name="word", port=80, protocol="tcp",
+                    evidence_key=f"{rule_id}|word|{ev}", evidence_summary=f"{name} at http://{probe}/",
+                    evidence={"extracted": [ev]},
+                ))
         return out
 
 

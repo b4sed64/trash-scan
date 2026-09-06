@@ -195,6 +195,45 @@ export interface EmergencyStopStatus {
   history: { id: string; state: string; note: string; requested_at: string }[];
 }
 
+export interface FindingRow {
+  id: string;
+  rule_id: string;
+  source_tool: string;
+  severity: string;
+  name: string;
+  description: string;
+  asset_value: string;
+  port: number | null;
+  status: string;
+  evidence_summary: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  requires_validation: boolean;
+}
+
+export interface ComparisonResult {
+  execution_id: string;
+  baseline_execution_id: string | null;
+  eligible: boolean;
+  summary: {
+    counts?: Record<string, number>;
+    by_severity?: Record<string, number>;
+    total_findings?: number;
+    note?: string;
+  };
+  limitations: string[];
+  details: {
+    finding_id: string;
+    rule_id: string;
+    name: string;
+    severity: string;
+    asset: string;
+    classification: string;
+    evidence_summary: string;
+  }[];
+  created_at?: string;
+}
+
 export interface NotificationItem {
   id: string;
   kind: string;

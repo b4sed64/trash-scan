@@ -3,7 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   api,
   ApiError,
+  ComparisonResult,
   Execution,
+  FindingRow,
   ObservationRow,
   OccurrenceRow,
   ScheduleRow,
@@ -11,6 +13,20 @@ import {
   Target,
   TimelineEntry,
 } from "../api";
+
+const SEV_CLASS: Record<string, string> = {
+  CRITICAL: "bad",
+  HIGH: "bad",
+  MEDIUM: "warn",
+  LOW: "warn",
+  INFO: "",
+};
+const CLASS_LABEL: Record<string, string> = {
+  NEW: "bad",
+  CHANGED: "warn",
+  STILL_OBSERVED: "",
+  NOT_OBSERVED: "ok",
+};
 
 const ACTIVE_ATTESTATION =
   "I attest this scan is authorized and will be used only for ethical, " +
@@ -45,6 +61,8 @@ export function TargetDetail() {
   const [scans, setScans] = useState<Execution[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
+  const [findings, setFindings] = useState<FindingRow[]>([]);
+  const [comparison, setComparison] = useState<ComparisonResult | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [active, setActive] = useState({
     profile: "SAFE_ACTIVE",
@@ -72,6 +90,12 @@ export function TargetDetail() {
     setScans((await api.get<Execution[]>("/api/scans")).filter((s) => s.target_id === id));
     setObservations(await api.get<ObservationRow[]>(`/api/targets/${id}/observations`));
     setServices(await api.get<ServiceRow[]>(`/api/targets/${id}/services`));
+    setFindings(await api.get<FindingRow[]>(`/api/targets/${id}/findings`));
+    setComparison(
+      await api
+        .get<ComparisonResult>(`/api/targets/${id}/comparison`)
+        .catch(() => null),
+    );
     setTimeline(await api.get<TimelineEntry[]>(`/api/targets/${id}/timeline`));
     const sl = await api.get<ScheduleRow[]>(`/api/targets/${id}/schedules`);
     setSchedules(sl);
@@ -325,6 +349,107 @@ export function TargetDetail() {
           </tbody>
         </table>
       </section>
+
+      <section className="card">
+        <h3>Findings ({findings.length})</h3>
+        <p className="notice">
+          Automated findings are <strong>indicators that require human validation</strong>, not
+          proof of exploitability. "Not observed" means only that the latest compatible scan
+          did not see it — never that it is resolved.
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Finding</th>
+              <th>Asset</th>
+              <th>Status</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {findings.map((f) => (
+              <tr key={f.id}>
+                <td>
+                  <span className={`badge ${SEV_CLASS[f.severity] ?? ""}`}>{f.severity}</span>
+                </td>
+                <td title={f.rule_id}>{f.name}</td>
+                <td>
+                  {f.asset_value}
+                  {f.port ? `:${f.port}` : ""}
+                </td>
+                <td>
+                  <span className={`badge ${f.status === "NOT_OBSERVED" ? "ok" : ""}`}>
+                    {f.status}
+                  </span>
+                </td>
+                <td className="muted" style={{ wordBreak: "break-all" }}>
+                  {f.evidence_summary}
+                </td>
+              </tr>
+            ))}
+            {findings.length === 0 && (
+              <tr>
+                <td colSpan={5} className="muted">
+                  No findings (run an approved active scan).
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      {comparison && (
+        <section className="card">
+          <h3>Change since previous compatible scan</h3>
+          {!comparison.eligible ? (
+            <p className="muted">
+              {comparison.summary.note ?? "No compatible baseline scan yet."}
+            </p>
+          ) : (
+            <>
+              <p>
+                {(["NEW", "CHANGED", "STILL_OBSERVED", "NOT_OBSERVED"] as const).map((k) => (
+                  <span key={k} className={`badge ${CLASS_LABEL[k]}`} style={{ marginRight: 6 }}>
+                    {k.replace("_", " ")}: {comparison.summary.counts?.[k] ?? 0}
+                  </span>
+                ))}
+              </p>
+              {comparison.limitations.length > 0 && (
+                <ul className="muted">
+                  {comparison.limitations.map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
+                </ul>
+              )}
+              <table>
+                <thead>
+                  <tr>
+                    <th>Classification</th>
+                    <th>Severity</th>
+                    <th>Finding</th>
+                    <th>Asset</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {comparison.details.map((d) => (
+                    <tr key={d.finding_id}>
+                      <td>
+                        <span className={`badge ${CLASS_LABEL[d.classification] ?? ""}`}>
+                          {d.classification.replace("_", " ")}
+                        </span>
+                      </td>
+                      <td>{d.severity}</td>
+                      <td>{d.name}</td>
+                      <td>{d.asset}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <h3>Recent scans</h3>

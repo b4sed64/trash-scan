@@ -6,16 +6,25 @@ tools must be added here *and* to the option allowlist with tests (PRD §31).
 from __future__ import annotations
 
 from ..config import get_settings
-from .base import STAGE_DNSX, STAGE_HTTPX, STAGE_NMAP, STAGE_SUBFINDER, ScannerAdapter
+from .base import (
+    STAGE_DNSX,
+    STAGE_HTTPX,
+    STAGE_NMAP,
+    STAGE_NUCLEI,
+    STAGE_SUBFINDER,
+    ScannerAdapter,
+)
 from .dnsx import DnsxAdapter
 from .fake import (
     FakeDnsxAdapter,
     FakeHttpxAdapter,
     FakeNmapAdapter,
+    FakeNucleiAdapter,
     FakeSubfinderAdapter,
 )
 from .httpx import HttpxAdapter
 from .nmap import NmapAdapter
+from .nuclei import NucleiAdapter
 from .subfinder import SubfinderAdapter
 
 _REAL = {
@@ -23,12 +32,14 @@ _REAL = {
     STAGE_DNSX: DnsxAdapter,
     STAGE_NMAP: NmapAdapter,
     STAGE_HTTPX: HttpxAdapter,
+    STAGE_NUCLEI: NucleiAdapter,
 }
 _FAKE = {
     STAGE_SUBFINDER: FakeSubfinderAdapter,
     STAGE_DNSX: FakeDnsxAdapter,
     STAGE_NMAP: FakeNmapAdapter,
     STAGE_HTTPX: FakeHttpxAdapter,
+    STAGE_NUCLEI: FakeNucleiAdapter,
 }
 
 

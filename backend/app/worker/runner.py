@@ -10,7 +10,13 @@ import ipaddress
 import os
 
 from ..adapters import StageInput, get_adapter
-from ..adapters.base import STAGE_DNSX, STAGE_HTTPX, STAGE_NMAP, STAGE_SUBFINDER
+from ..adapters.base import (
+    STAGE_DNSX,
+    STAGE_HTTPX,
+    STAGE_NMAP,
+    STAGE_NUCLEI,
+    STAGE_SUBFINDER,
+)
 from ..config import get_settings
 from ..db import SessionLocal
 from ..models import ScanExecution
@@ -18,6 +24,8 @@ from ..scan_profiles import profile_for
 from ..services.audit_service import AuditService
 from ..services.emergency import active_stop, blocks_execution
 from ..services.execution_service import TERMINAL, ScanService
+from ..services import comparison as comparison_service
+from ..services.findings import record_findings
 from ..services.normalization import apply_stage_outputs
 from ..services.scope_db import evaluate_target_scope, load_private_cidrs
 
@@ -39,6 +47,7 @@ def _limits() -> dict:
     return {
         "dns_qps": s.dns_queries_per_second,
         "http_rps": s.http_requests_per_second,
+        "nuclei_rps": s.nuclei_requests_per_second,
         "stage_timeout": min(s.max_runtime_minutes * 60, 1800),
     }
 
@@ -182,7 +191,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             hosts = list(discovered_hosts)
         elif stage_name == STAGE_NMAP:
             hosts = list(in_scope_ips)
-        elif stage_name == STAGE_HTTPX:
+        elif stage_name in (STAGE_HTTPX, STAGE_NUCLEI):
             hosts = sorted(set(web_probes) | set(in_scope_ips))
         else:
             hosts = []
@@ -226,10 +235,11 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         ex.stages = stage_meta
         ex.tool_versions = tool_versions
         ex.normalized_args = normalized_args
-        ex.parser_version = "3"
+        ex.parser_version = "4"
 
         try:
             summary = apply_stage_outputs(db, ex, stage_outputs)
+            summary.update(record_findings(db, ex, stage_outputs))
         except Exception as exc:  # noqa: BLE001 - a parser must not crash the worker
             db.rollback()
             ex = db.get(ScanExecution, execution_id)
@@ -261,6 +271,8 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             return "CANCELLED"
 
         ex.partial = incomplete
+        if any(m["stage"] == "nuclei" for m in stage_meta):
+            ex.template_set_hash = _nuclei_template_hash()
         ScanService.transition(db, ex, "COMPLETED", actor="system:worker",
                                extra_payload={**summary, "partial": incomplete})
         AuditService.append(
@@ -269,5 +281,16 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             payload={**summary, "tool_versions": tool_versions,
                      "stages": [m["stage"] for m in stage_meta]},
         )
+        db.flush()
+        comparison_service.build_and_store(db, ex)
         db.commit()
         return "COMPLETED"
+
+
+def _nuclei_template_hash() -> str:
+    try:
+        from ..adapters.nuclei import template_set_hash
+
+        return template_set_hash()
+    except Exception:  # noqa: BLE001
+        return ""

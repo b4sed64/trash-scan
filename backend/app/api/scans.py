@@ -281,6 +281,15 @@ def target_timeline(target_id: str, user: User = Depends(get_current_user),
                                  + ("" if a.approved else " (unapproved)"),
                        "ref": a.id})
 
+    from ..models import Finding
+
+    for f in db.execute(select(Finding).where(Finding.target_id == target_id)).scalars():
+        events.append({"at": f.first_seen_at, "kind": "finding_first_observed",
+                       "detail": f"[{f.severity}] {f.name} on {f.asset_value}"
+                                 + (" — NOT OBSERVED in latest scan" if f.status == "NOT_OBSERVED"
+                                    else ""),
+                       "ref": f.id})
+
     for ev in db.execute(
         select(AuditEvent).where(
             AuditEvent.object_type == "target", AuditEvent.object_id == target_id

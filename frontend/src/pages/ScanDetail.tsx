@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, ScanGroupDetail } from "../api";
-import { stateBadge } from "./Scans";
+import { PauseIcon, PlayIcon, StopIcon } from "../components/icons";
+import { stateBadge, stateLabel } from "./Scans";
 
 const SEV_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"] as const;
 const SEV_VAR: Record<string, string> = {
@@ -17,6 +18,7 @@ const PROFILE_LABELS: Record<string, string> = {
   STANDARD_ACTIVE: "Standard Active",
 };
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED", "PARTIAL"];
+const LIVE = ["QUEUED", "RUNNING", "CANCELLING"];
 
 export function ScanDetail() {
   const { id = "" } = useParams();
@@ -36,15 +38,18 @@ export function ScanDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (!scan || TERMINAL.includes(scan.state)) return;
+    if (!scan || !LIVE.includes(scan.state)) return;
     const t = setInterval(() => void load(), 4000);
     return () => clearInterval(t);
   }, [scan, load]);
 
-  async function control(verb: "start" | "stop") {
+  async function control(verb: "start" | "pause" | "stop") {
     setError("");
     try {
-      await api.post(`/api/scans/${id}/${verb}`, verb === "stop" ? { reason: "stopped from scan view" } : undefined);
+      await api.post(
+        `/api/scans/${id}/${verb}`,
+        verb === "stop" ? { reason: "stopped from scan view" } : undefined,
+      );
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : `${verb} failed`);
@@ -56,14 +61,15 @@ export function ScanDetail() {
 
   const counts = scan.summary.severity_counts;
   const total = scan.summary.total_findings;
-  const canStart = scan.state === "APPROVED";
+  const canStart = scan.state === "APPROVED" || scan.state === "DRAFT";
+  const canPause = scan.state === "QUEUED";
   const canStop = !TERMINAL.includes(scan.state);
 
   return (
     <div>
       <h2>
         Scan {scan.scan_id.slice(0, 8)} —{" "}
-        <span className={`badge ${stateBadge(scan.state)} status-dot`}>{scan.state}</span>
+        <span className={`badge ${stateBadge(scan.state)} status-dot`}>{stateLabel(scan.state)}</span>
       </h2>
       {error && <p className="error">{error}</p>}
       <p className="muted">
@@ -108,10 +114,19 @@ export function ScanDetail() {
         )}
 
         <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.7rem", flexWrap: "wrap" }}>
-          {canStart && <button onClick={() => void control("start")}>Start Scan</button>}
+          {canStart && (
+            <button className="btn-icon" onClick={() => void control("start")}>
+              <PlayIcon /> Start Scan
+            </button>
+          )}
+          {canPause && (
+            <button className="btn-icon secondary" onClick={() => void control("pause")}>
+              <PauseIcon /> Pause Scan
+            </button>
+          )}
           {canStop && (
-            <button className="secondary" onClick={() => void control("stop")}>
-              Stop Scan
+            <button className="btn-icon secondary" onClick={() => void control("stop")}>
+              <StopIcon /> Stop Scan
             </button>
           )}
         </div>
@@ -174,7 +189,7 @@ export function ScanDetail() {
               <Link to={`/targets/${h.target.id}`}>{h.target.value}</Link>{" "}
               <span className="muted" style={{ fontSize: "0.8rem" }}>({h.target.kind})</span>
             </h3>
-            <span className={`badge ${stateBadge(h.state)} status-dot`}>{h.state}</span>
+            <span className={`badge ${stateBadge(h.state)} status-dot`}>{stateLabel(h.state)}</span>
           </div>
           {h.error && <p className="error">{h.error}</p>}
 

@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import { api, ApiError, EmergencyStopStatus, Execution, ScanGroup, Target } from "../api";
 import { useAuth } from "../auth";
 import { MultiSelect, Option } from "../components/MultiSelect";
+import { PauseIcon, PlayIcon, StopIcon } from "../components/icons";
 
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED", "PARTIAL"];
+// states that change on their own — only these justify polling for updates
+const LIVE = ["QUEUED", "RUNNING", "CANCELLING"];
 const ACTIVE_ATTESTATION =
   "I attest this scan is authorized and will be used only for ethical, " +
   "non-exploitative reconnaissance";
@@ -30,6 +33,11 @@ export function stateBadge(state: string): string {
   if (["FAILED", "TIMED_OUT", "DENIED", "EXPIRED"].includes(state)) return "bad";
   if (["CANCELLED", "CANCELLING", "PARTIAL"].includes(state)) return "warn";
   return "";
+}
+
+// A scan created but not yet started sits in DRAFT (passive) — show it as READY.
+export function stateLabel(state: string): string {
+  return state === "DRAFT" ? "READY" : state;
 }
 
 export function Scans() {
@@ -67,7 +75,7 @@ export function Scans() {
   }, [load]);
 
   useEffect(() => {
-    const active = () => scans.some((s) => !TERMINAL.includes(s.state));
+    const active = () => scans.some((s) => LIVE.includes(s.state));
     const id = setInterval(() => active() && void load(), 4000);
     return () => clearInterval(id);
   }, [load, scans]);
@@ -140,8 +148,8 @@ export function Scans() {
       const n = r.executions.length;
       setNotice(
         isActive
-          ? `One active scan over ${n} target${n === 1 ? "" : "s"} submitted for administrator approval.`
-          : `One passive scan over ${n} target${n === 1 ? "" : "s"} queued.`,
+          ? `One active scan over ${n} target${n === 1 ? "" : "s"} submitted for administrator approval — press Start once it is approved.`
+          : `One passive scan over ${n} target${n === 1 ? "" : "s"} created — press Start to run it.`,
       );
       setTyped("");
       setPickedIds([]);
@@ -152,11 +160,14 @@ export function Scans() {
     }
   }
 
-  async function control(scanId: string, verb: "start" | "stop") {
+  async function control(scanId: string, verb: "start" | "pause" | "stop") {
     setError("");
     setNotice("");
     try {
-      await api.post(`/api/scans/${scanId}/${verb}`, verb === "stop" ? { reason: "stopped from Scans view" } : undefined);
+      await api.post(
+        `/api/scans/${scanId}/${verb}`,
+        verb === "stop" ? { reason: "stopped from Scans view" } : undefined,
+      );
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : `${verb} failed`);
@@ -202,10 +213,10 @@ export function Scans() {
       <section className="card">
         <h3>New Scan</h3>
         <p className="muted">
-          Defining a target does not queue anything. Pick any of your targets and/or type
-          additional hosts, IPs, or networks (CIDR) — a single scan covers every target you
-          choose. Active profiles need the typed attestation and a fresh administrator approval,
-          then wait in the queue until you press Start.
+          Pick any of your targets and/or type additional hosts, IPs, or networks (CIDR) — a
+          single scan covers every target you choose. Nothing runs on its own: the scan is
+          created idle and you press Start. Active profiles also need the typed attestation and
+          a fresh administrator approval before they can be started.
         </p>
         <form onSubmit={submitScan}>
           <div className="row">
@@ -296,7 +307,7 @@ export function Scans() {
             style={{ marginTop: "0.7rem" }}
             disabled={isActive && attestation.trim() !== ACTIVE_ATTESTATION}
           >
-            {isActive ? "Submit for Approval" : "Queue Passive Scan"}
+            {isActive ? "Submit for Approval" : "Create Passive Scan"}
           </button>
         </form>
       </section>
@@ -324,7 +335,8 @@ export function Scans() {
             </thead>
             <tbody>
               {scans.map((s) => {
-                const canStart = s.state === "APPROVED";
+                const canStart = s.state === "APPROVED" || s.state === "DRAFT";
+                const canPause = s.state === "QUEUED";
                 const canStop = !TERMINAL.includes(s.state);
                 return (
                   <tr key={s.scan_id}>
@@ -333,7 +345,7 @@ export function Scans() {
                       <Link to={`/scans/${s.scan_id}`}>
                         {s.target_count === 1
                           ? s.targets[0]?.value ?? s.scan_id.slice(0, 8)
-                          : `${s.target_count} targets`}
+                          : `${s.target_count} Targets`}
                       </Link>
                       {s.target_count > 1 && (
                         <div className="muted" style={{ fontSize: "0.8rem" }}>
@@ -346,19 +358,34 @@ export function Scans() {
                       {s.schedule_id ? " · scheduled" : ""}
                     </td>
                     <td>
-                      <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
+                      <span className={`badge ${stateBadge(s.state)} status-dot`}>
+                        {stateLabel(s.state)}
+                      </span>
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
                         {canStart && (
-                          <button onClick={() => void control(s.scan_id, "start")}>Start</button>
-                        )}
-                        {canStop && (
-                          <button className="secondary" onClick={() => void control(s.scan_id, "stop")}>
-                            Stop
+                          <button className="pill-btn" onClick={() => void control(s.scan_id, "start")}>
+                            <PlayIcon /> Start
                           </button>
                         )}
-                        <Link className="badge" to={`/scans/${s.scan_id}`}>
+                        {canPause && (
+                          <button
+                            className="pill-btn secondary"
+                            onClick={() => void control(s.scan_id, "pause")}
+                          >
+                            <PauseIcon /> Pause
+                          </button>
+                        )}
+                        {canStop && (
+                          <button
+                            className="pill-btn secondary"
+                            onClick={() => void control(s.scan_id, "stop")}
+                          >
+                            <StopIcon /> Stop
+                          </button>
+                        )}
+                        <Link className="pill-btn secondary" to={`/scans/${s.scan_id}`}>
                           Review
                         </Link>
                       </div>

@@ -26,7 +26,8 @@ const ACTIVE_ATTESTATION =
   "I attest this scan is authorized and will be used only for ethical, " +
   "non-exploitative reconnaissance";
 import { useAuth } from "../auth";
-import { stateBadge } from "./Scans";
+import { PauseIcon, PlayIcon, StopIcon } from "../components/icons";
+import { stateBadge, stateLabel } from "./Scans";
 
 interface ScopePreview {
   allowed: boolean;
@@ -43,6 +44,7 @@ interface Account {
 }
 
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"];
+const LIVE = ["QUEUED", "RUNNING", "CANCELLING"];
 
 export function TargetDetail() {
   const { id = "" } = useParams();
@@ -112,7 +114,7 @@ export function TargetDetail() {
   }, [load]);
 
   useEffect(() => {
-    if (!scans.some((s) => !TERMINAL.includes(s.state))) return;
+    if (!scans.some((s) => LIVE.includes(s.state))) return;
     const t = setInterval(() => void load(), 4000);
     return () => clearInterval(t);
   }, [scans, load]);
@@ -482,36 +484,49 @@ export function TargetDetail() {
                   <td>
                     {s.profile}
                     {s.schedule_id ? " · scheduled" : ""}
-                    {s.target_count > 1 ? ` · ${s.target_count} targets` : ""}
+                    {s.target_count > 1 ? ` · ${s.target_count} Targets` : ""}
                   </td>
                   <td>
                     <Link to={`/scans/${s.scan_id}`}>
-                      <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
+                      <span className={`badge ${stateBadge(s.state)} status-dot`}>
+                        {stateLabel(s.state)}
+                      </span>
                     </Link>
                   </td>
                   <td>
                     <span className={`badge ${stateBadge(here?.state ?? "")}`}>
-                      {here?.state ?? "—"}
+                      {here ? stateLabel(here.state) : "—"}
                     </span>
                   </td>
                   <td>
-                    {s.state === "APPROVED" && (
-                      <button
-                        onClick={call(() => api.post(`/api/scans/${s.scan_id}/start`))}
-                      >
-                        Start
-                      </button>
-                    )}
-                    {!TERMINAL.includes(s.state) && (
-                      <button
-                        className="secondary"
-                        onClick={call(() =>
-                          api.post(`/api/scans/${s.scan_id}/stop`, { reason: "" }),
-                        )}
-                      >
-                        Stop
-                      </button>
-                    )}
+                    <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                      {(s.state === "APPROVED" || s.state === "DRAFT") && (
+                        <button
+                          className="pill-btn"
+                          onClick={call(() => api.post(`/api/scans/${s.scan_id}/start`))}
+                        >
+                          <PlayIcon /> Start
+                        </button>
+                      )}
+                      {s.state === "QUEUED" && (
+                        <button
+                          className="pill-btn secondary"
+                          onClick={call(() => api.post(`/api/scans/${s.scan_id}/pause`))}
+                        >
+                          <PauseIcon /> Pause
+                        </button>
+                      )}
+                      {!TERMINAL.includes(s.state) && (
+                        <button
+                          className="pill-btn secondary"
+                          onClick={call(() =>
+                            api.post(`/api/scans/${s.scan_id}/stop`, { reason: "" }),
+                          )}
+                        >
+                          <StopIcon /> Stop
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );

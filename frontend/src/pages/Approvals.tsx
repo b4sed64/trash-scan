@@ -49,7 +49,7 @@ export function Approvals() {
             <p>
               <strong>{a.profile}</strong> on{" "}
               {a.target_count > 1 ? (
-                <Link to={`/scans/${a.scan_id}`}>{a.target_count} targets</Link>
+                <Link to={`/scans/${a.scan_id}`}>{a.target_count} Targets</Link>
               ) : (
                 <Link to={`/targets/${a.target?.id}`}>{a.target?.value}</Link>
               )}{" "}

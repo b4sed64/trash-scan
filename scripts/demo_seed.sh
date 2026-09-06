@@ -38,8 +38,9 @@ T_IP="$(api -X POST "$BASE/api/targets" -d '{"value":"10.10.5.20","note":"demo h
 api -X POST "$BASE/api/targets/$T_DOM/assignments" -d "{\"user_id\":\"$SC\"}" > /dev/null
 api -X POST "$BASE/api/targets/$T_IP/assignments"  -d "{\"user_id\":\"$SC\"}" > /dev/null
 
-echo "==> passive discovery on the domain"
-api -X POST "$BASE/api/targets/$T_DOM/scans" -d '{"profile":"PASSIVE"}' > /dev/null
+echo "==> passive discovery on the domain (created idle, started below)"
+PASSIVE_SID="$(api -X POST "$BASE/api/targets/$T_DOM/scans" -d '{"profile":"PASSIVE"}' \
+  | grep -oE '"scan_id":"[^"]+"' | head -1 | cut -d'"' -f4)"
 api -X POST "$BASE/api/targets/$T_DOM/schedules" \
   -d '{"profile":"PASSIVE","recurrence":"INTERVAL","interval_minutes":30}' > /dev/null
 
@@ -65,6 +66,10 @@ run_active() {
   api -X POST "$BASE/api/scans/$sid/start" > /dev/null
   wait_scan "$sid"
 }
+
+echo "==> starting the passive scan ($PASSIVE_SID)"
+api -X POST "$BASE/api/scans/$PASSIVE_SID/start" > /dev/null
+wait_scan "$PASSIVE_SID"
 
 run_active SAFE_ACTIVE
 run_active STANDARD_ACTIVE

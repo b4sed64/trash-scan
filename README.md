@@ -23,7 +23,7 @@ definition.
 |---|---|
 | **Dashboard** | Security overview — KPI tiles, findings-by-severity, a severity-ranked threats table, your targets, and reports/exports |
 | **Targets** | Define IPv4 / CIDR / domain targets (admin); public targets need a typed attestation |
-| **Scans** | Run **one scan** over any mix of chosen targets and typed hosts/IPs/CIDRs; pick a profile, ports and rate for active scans. Approved scans wait in the queue with **Start** / **Stop** buttons; a scan detail page reviews results per host |
+| **Scans** | Build **one scan** over any mix of chosen targets and typed hosts/IPs/CIDRs; pick a profile, ports and rate for active scans. Every scan is created idle — you press **Start** (passive scans too); **Pause** unqueues a just-started scan, **Stop** cancels it. A scan detail page reviews results per host |
 | **Approvals** (admin) | Approve or deny each active scan (one approval covers all its targets); approval is single-use, expires two hours after it is granted, and does **not** start the scan — the requester presses Start |
 | **Logs** | The tamper-evident audit chain — filter by action, search by scan/object id, order ascending/descending, verify the chain |
 | **Administration** (admin) | Accounts + password reset, private scope, deny rules, port sets, tool/template maintenance |

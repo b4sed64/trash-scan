@@ -1,9 +1,11 @@
 """Scans: a scan is one logical unit that may cover several targets.
 
-Each target is one :class:`ScanExecution` sharing a ``scan_group_id``. An active
-scan needs a single administrator approval for the whole group; after approval it
-waits in the queue until the requester (or an administrator) presses **Start**,
-and can be **Stop**ped while it runs.
+Each target is one :class:`ScanExecution` sharing a ``scan_group_id``. Nothing
+runs on its own: a scan is created idle and the requester (or an administrator)
+presses **Start**. A passive scan waits in ``DRAFT``; an active scan needs a
+single administrator approval for the whole group first and then waits in
+``APPROVED``. **Pause** returns a just-started scan to that idle state; **Stop**
+cancels it (before or during the run).
 """
 from __future__ import annotations
 
@@ -180,7 +182,6 @@ def _launch_group(db: Session, user: User, targets: list[Target], body: CreateSc
         if not t.is_active:
             raise HTTPException(status.HTTP_409_CONFLICT, f"target {t.value} is archived")
 
-    now = dt.datetime.now(dt.timezone.utc)
     profile = profile_for(body.profile)
     group_id = str(uuid.uuid4())
     size = len(targets)
@@ -211,13 +212,14 @@ def _launch_group(db: Session, user: User, targets: list[Target], body: CreateSc
 
     executions: list[ScanExecution] = []
     for i, t in enumerate(targets, start=1):
+        # Every scan is created idle. Nothing runs until the requester presses
+        # Start: a passive scan waits in DRAFT, an active one goes to the
+        # approval queue and waits in APPROVED once granted.
         ex = ScanExecution(
             target_id=t.id, requested_by_id=user.id, profile=body.profile,
             classification="PASSIVE" if passive else "ACTIVE",
             scan_group_id=group_id, group_seq=i, group_size=size,
-            options=options,
-            state="QUEUED" if passive else "DRAFT",
-            queued_at=now if passive else None,
+            options=options, state="DRAFT",
         )
         db.add(ex)
         db.flush()
@@ -225,8 +227,8 @@ def _launch_group(db: Session, user: User, targets: list[Target], body: CreateSc
             AuditService.append(
                 db, actor=f"user:{user.username}", action="SCAN_STATE_CHANGE",
                 object_type="scan_execution", object_id=ex.id,
-                payload={"from": "DRAFT", "to": "QUEUED", "profile": "PASSIVE",
-                         "scan_group_id": group_id},
+                payload={"to": "DRAFT", "profile": "PASSIVE", "scan_group_id": group_id,
+                         "note": "created; awaiting manual start"},
             )
         else:
             ScanService.transition(db, ex, "AWAITING_APPROVAL", actor=f"user:{user.username}",
@@ -264,12 +266,6 @@ def _launch_group(db: Session, user: User, targets: list[Target], body: CreateSc
             ))
 
     db.commit()
-
-    if passive:
-        from ..worker.tasks import run_execution
-
-        for ex in executions:
-            run_execution.delay(ex.id)
 
     fresh = executions_for(db, group_id)
     return {
@@ -505,6 +501,43 @@ def start_scan(scan_id: str, user: User = Depends(get_current_user),
     for ex in executions_for(db, scan_id):
         if ex.state == "QUEUED":
             run_execution.delay(ex.id)
+    return get_scan(scan_id, user, db)
+
+
+@router.post("/api/scans/{scan_id}/pause", dependencies=[Depends(require_csrf)])
+def pause_scan(scan_id: str, user: User = Depends(get_current_user),
+               db: Session = Depends(get_db)) -> dict:
+    execs = executions_for(db, scan_id)
+    if not execs or not _visible(db, user, execs):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "scan not found")
+    if not _may_control(user, execs):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "you may only pause your own scan")
+
+    running = any(e.state in ("RUNNING", "CANCELLING") for e in execs)
+    paused = 0
+    for ex in execs:
+        if ex.state == "QUEUED":
+            # Pull it back out of the run queue. An active scan returns to
+            # APPROVED and keeps its approval window; a passive scan returns to
+            # DRAFT. Either way the requester restarts it with Start.
+            back = "APPROVED" if ex.classification == "ACTIVE" else "DRAFT"
+            ScanService.transition(db, ex, back, actor=f"user:{user.username}",
+                                   reason="paused before start", notify=False)
+            ex.queued_at = None
+            paused += 1
+
+    if paused == 0:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "the scan is already running — use Stop" if running else "nothing to pause",
+        )
+
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="SCAN_PAUSED",
+        object_type="scan", object_id=execs[0].scan_group_id or execs[0].id,
+        payload={"executions_paused": paused},
+    )
+    db.commit()
     return get_scan(scan_id, user, db)
 
 

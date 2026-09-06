@@ -25,7 +25,11 @@ ALLOWED: dict[str, set[str]] = {
     # (PRD §6.4 / §24): the execution never reaches a tool but must still land in
     # an accurate terminal state.
     "APPROVED": {"QUEUED", "CANCELLED", "EXPIRED", "FAILED"},
-    "QUEUED": {"RUNNING", "CANCELLED", "EXPIRED", "CANCELLING", "FAILED"},
+    # QUEUED -> APPROVED / DRAFT is a pause: the requester pulls the scan back out
+    # of the run queue before it starts (an active scan returns to APPROVED and
+    # keeps its approval window; a passive scan returns to DRAFT). The worker
+    # no-ops a stray task for any non-QUEUED/RUNNING state.
+    "QUEUED": {"RUNNING", "APPROVED", "DRAFT", "CANCELLED", "EXPIRED", "CANCELLING", "FAILED"},
     "RUNNING": {"COMPLETED", "FAILED", "CANCELLING", "TIMED_OUT"},
     "CANCELLING": {"CANCELLED", "FAILED"},
     "COMPLETED": set(),
@@ -66,6 +70,7 @@ class ScanService:
         actor: str,
         reason: str | None = None,
         extra_payload: dict | None = None,
+        notify: bool = True,
     ) -> bool:
         """Move ``execution`` to ``target_state``. Returns False (no-op) if the
         execution is already in a terminal state — this keeps requeues idempotent.
@@ -103,7 +108,7 @@ class ScanService:
             object_type="scan_execution", object_id=execution.id, payload=payload,
         )
 
-        if target_state in _REQUESTER_NOTIFY and execution.requested_by_id:
+        if notify and target_state in _REQUESTER_NOTIFY and execution.requested_by_id:
             title, body = _REQUESTER_NOTIFY[target_state]
             db.add(Notification(
                 user_id=execution.requested_by_id, kind=f"SCAN_{target_state}",

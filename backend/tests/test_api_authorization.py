@@ -87,7 +87,8 @@ def test_scanner_cannot_reach_admin_routes_or_unassigned_target(admin_client):
             "/api/targets", json={"value": "10.10.9.9"},
             headers={"X-CSRF-Token": sclient.cookies.get("trashscan_csrf")},
         ).status_code == 403
-        # passive discovery works on the assigned target (runs inline via eager Celery)
+        # passive discovery works on the assigned target — created idle, then Started
+        # (runs inline via eager Celery)
         pr = sclient.post(
             f"/api/targets/{t1_id}/scans",
             json={"profile": "PASSIVE"},
@@ -95,6 +96,11 @@ def test_scanner_cannot_reach_admin_routes_or_unassigned_target(admin_client):
         )
         assert pr.status_code == 201
         assert pr.json()["classification"] == "PASSIVE"
+        assert pr.json()["state"] == "DRAFT"
+        sclient.post(
+            f"/api/scans/{pr.json()['scan_id']}/start",
+            headers={"X-CSRF-Token": sclient.cookies.get("trashscan_csrf")},
+        )
         target = sclient.get(f"/api/targets/{t1_id}").json()
         assert target["assets"], "expected discovered assets"
         assert all(a["approved"] is False for a in target["assets"]), "discoveries must be unapproved"

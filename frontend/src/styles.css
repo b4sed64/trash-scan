@@ -54,6 +54,33 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 button.secondary { background: transparent; border-color: var(--border); }
 button.danger { background: var(--danger); border-color: var(--danger); }
 
+/* buttons carrying a leading glyph (scan controls) */
+.btn-icon { display: inline-flex; align-items: center; gap: 0.4rem; }
+.btn-icon svg { flex-shrink: 0; }
+
+/* compact action pill — used for the row controls in scan-history tables.
+   Shared by <button> and <Link> so Start / Pause / Stop / Review line up. */
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.26rem 0.6rem;
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.15;
+  border-radius: 6px;
+  border: 1px solid var(--forest-bright);
+  background: var(--forest);
+  color: var(--offwhite);
+  text-decoration: none;
+  cursor: pointer;
+}
+.pill-btn:hover { background: var(--forest-bright); }
+.pill-btn.secondary { background: transparent; border-color: var(--border); color: var(--offwhite); }
+.pill-btn.secondary:hover { background: var(--charcoal-sunk); }
+.pill-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
   outline: 3px solid var(--amber);
   outline-offset: 2px;
@@ -207,31 +234,11 @@ th { color: var(--text-dim); font-weight: 600; }
   line-height: 1;
 }
 
-/* login: the raccoon poking up out of a tipped-open bin, centred above the card */
-.login-raccoon {
-  position: relative;
-  width: 170px;
-  height: 168px;
+/* login: the brand mark, centred above the card */
+.login-mark {
+  display: flex;
+  justify-content: center;
   margin: 0 auto 1rem;
-}
-.login-raccoon .lr-coon {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translateX(-52%);
-  font-size: 96px;
-  line-height: 1;
-  z-index: 1;
-  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
-}
-.login-raccoon .lr-can {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  font-size: 112px;
-  line-height: 1;
-  z-index: 2;
 }
 
 /* ---- password field ---- */
@@ -251,18 +258,6 @@ th { color: var(--text-dim); font-weight: 600; }
 .pw-toggle:hover { color: var(--offwhite); }
 .pw-toggle[aria-pressed="true"] { color: var(--amber); }
 
-.sidebar-watermark {
-  position: absolute;
-  left: 50%;
-  bottom: 74px;
-  transform: translateX(-50%);
-  font-size: 124px;
-  line-height: 1;
-  opacity: 0.07;
-  filter: grayscale(0.2);
-  pointer-events: none;
-  user-select: none;
-}
 .brand-account {
   display: block;
   margin: 0.4rem 0 0.6rem;

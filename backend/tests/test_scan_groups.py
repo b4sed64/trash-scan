@@ -57,6 +57,14 @@ def test_multi_target_passive_is_one_scan(env):
     assert {h["target"]["value"] for h in detail["hosts"]} == {"10.10.5.20", "10.10.5.21"}
     assert "severity_counts" in detail["summary"]
 
+    # a passive scan does not run on its own — it waits in DRAFT for a manual Start
+    assert detail["state"] == "DRAFT"
+    assert all(h["state"] == "DRAFT" for h in detail["hosts"])
+    assert _p(env["admin"], f"/api/scans/{scan_id}/start").status_code == 200
+    assert env["admin"].get(f"/api/scans/{scan_id}").json()["state"] in (
+        "COMPLETED", "RUNNING", "QUEUED", "PARTIAL"
+    )
+
 
 def test_active_multi_target_one_approval_then_start(env):
     sc = _scanner()
@@ -98,6 +106,39 @@ def test_stop_cancels_the_whole_group(env):
     assert all(h["state"] == "CANCELLED" for h in detail["hosts"])
     # stopping again is a conflict — already finished
     assert _p(env["admin"], f"/api/scans/{scan_id}/stop", {"reason": "again"}).status_code == 409
+
+
+def test_pause_returns_a_started_scan_to_the_queue(env, db):
+    from app.models import ScanExecution
+    from app.services.execution_service import ScanService
+
+    r = _p(env["admin"], "/api/scans", {
+        "target_ids": [env["t1"], env["t2"]], "profile": "SAFE_ACTIVE",
+        "attestation_text": ACTIVE_SCAN_ATTESTATION,
+    })
+    scan_id = r.json()["scan_id"]
+    approval = env["admin"].get("/api/approvals?include_decided=false").json()[0]
+    _p(env["admin"], f"/api/approvals/{approval['id']}/approve")
+
+    # simulate Start reaching the queue without the eager worker picking it up
+    for ex in db.query(ScanExecution).filter(ScanExecution.scan_group_id == scan_id):
+        ScanService.transition(db, ex, "QUEUED", actor="test")
+    db.commit()
+    assert env["admin"].get(f"/api/scans/{scan_id}").json()["state"] == "QUEUED"
+
+    # Pause -> every execution goes back to APPROVED, nothing runs
+    assert _p(env["admin"], f"/api/scans/{scan_id}/pause").status_code == 200
+    detail = env["admin"].get(f"/api/scans/{scan_id}").json()
+    assert detail["state"] == "APPROVED"
+    assert all(h["state"] == "APPROVED" for h in detail["hosts"])
+
+    # Start again -> it runs
+    assert _p(env["admin"], f"/api/scans/{scan_id}/start").status_code == 200
+    assert env["admin"].get(f"/api/scans/{scan_id}").json()["state"] in (
+        "COMPLETED", "RUNNING", "QUEUED", "PARTIAL"
+    )
+    # pausing a scan that is no longer queued is a conflict
+    assert _p(env["admin"], f"/api/scans/{scan_id}/pause").status_code == 409
 
 
 def test_scanner_cannot_start_another_users_scan(env):

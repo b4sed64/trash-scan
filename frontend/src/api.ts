@@ -86,6 +86,67 @@ export interface AuditEvent {
   curr_hash: string;
 }
 
+export interface Execution {
+  id: string;
+  target_id: string;
+  profile: string;
+  classification: string;
+  state: string;
+  requested_by_id: string | null;
+  schedule_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  runtime_deadline_at: string | null;
+  cancel_requested: boolean;
+  partial: boolean;
+  error: string | null;
+  stages: { stage: string; tool: string; ok: boolean; incomplete: boolean; note: string }[] | null;
+  tool_versions: Record<string, string> | null;
+  parser_version: string;
+}
+
+export interface ObservationRow {
+  id: string;
+  kind: string;
+  key: string;
+  value: string;
+  source_tool: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind: string;
+  detail: string;
+  ref: string;
+}
+
+export interface ScheduleRow {
+  id: string;
+  target_id: string;
+  profile: string;
+  classification: string;
+  recurrence: string;
+  interval_minutes: number | null;
+  at_time: string | null;
+  timezone: string;
+  enabled: boolean;
+  overlap_policy: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_by_id: string | null;
+}
+
+export interface OccurrenceRow {
+  id: string;
+  scheduled_for: string;
+  state: string;
+  execution_id: string | null;
+  note: string;
+}
+
 export interface NotificationItem {
   id: string;
   kind: string;

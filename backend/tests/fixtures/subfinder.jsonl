@@ -1,0 +1,7 @@
+{"host":"www.lab.example.com","input":"lab.example.com","source":"crtsh"}
+{"host":"api.lab.example.com","input":"lab.example.com","source":"hackertarget"}
+{"host":"api.lab.example.com","input":"lab.example.com","source":"alienvault"}
+{"host":"vpn.lab.example.com","input":"lab.example.com","source":"dnsdumpster"}
+{"host":"","input":"lab.example.com","source":"broken"}
+this line is not json and must be skipped
+{"host":"MAIL.LAB.EXAMPLE.COM.","input":"lab.example.com","source":"waybackarchive"}

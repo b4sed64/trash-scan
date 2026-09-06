@@ -9,14 +9,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..adapters import FakePassiveAdapter
-from ..adapters.base import ScanInput
 from ..constants import PUBLIC_TARGET_ATTESTATION
 from ..db import get_db
-from ..models import Assignment, Asset, Notification, Target, User
+from ..models import Assignment, Notification, Target, User
 from ..services import AuditService, AuthorizationService, ScopeError, canonicalize_target
 from ..services.authorization_service import PermissionDenied
-from ..services.scope_db import evaluate_target_scope, load_private_cidrs
+from ..services.scope_db import evaluate_target_scope
 from .deps import get_current_user, require_admin, require_csrf
 
 router = APIRouter(prefix="/api/targets", tags=["targets"])
@@ -40,20 +38,6 @@ class AssignRequest(BaseModel):
 
 
 # --- helpers -------------------------------------------------------------
-def _within_any_cidr(ip: str, cidrs: list[str]) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    for c in cidrs:
-        try:
-            if addr in ipaddress.ip_network(c, strict=False):
-                return True
-        except ValueError:
-            continue
-    return False
-
-
 def _target_dto(t: Target) -> dict:
     return {
         "id": t.id,
@@ -264,59 +248,32 @@ def scope_preview(target_id: str, user: User = Depends(get_current_user),
     return evaluate_target_scope(db, target).as_audit_payload()
 
 
-@router.post("/{target_id}/passive-scan", dependencies=[Depends(require_csrf)])
+@router.post("/{target_id}/passive-scan", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_csrf)])
 def run_passive_scan(target_id: str, user: User = Depends(get_current_user),
                      db: Session = Depends(get_db)) -> dict:
+    """Compatibility endpoint: queue a passive execution (see POST /api/targets/{id}/scans)."""
+    from ..models import ScanExecution
+
     target = _access_or_404(db, user, target_id)
     if not target.is_active:
         raise HTTPException(status.HTTP_409_CONFLICT, "target is archived")
 
-    result = FakePassiveAdapter().run(ScanInput(target.kind, target.value, "PASSIVE"))
-    if not result.ok:
-        AuditService.append(
-            db, actor=f"user:{user.username}", action="PASSIVE_SCAN_FAILED",
-            object_type="target", object_id=target.id, payload={"stderr": result.stderr[:500]},
-        )
-        db.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "passive discovery failed")
-
-    private_cidrs = load_private_cidrs(db)
     now = dt.datetime.now(dt.timezone.utc)
-    added = updated = 0
-    for disc in result.assets:
-        in_scope = disc.kind == "IP" and _within_any_cidr(disc.value, private_cidrs)
-        existing = db.execute(
-            select(Asset).where(
-                Asset.target_id == target.id,
-                Asset.kind == disc.kind,
-                Asset.value == disc.value,
-            )
-        ).scalar_one_or_none()
-        if existing:
-            existing.last_seen_at = now
-            existing.in_scope = in_scope
-            updated += 1
-        else:
-            db.add(Asset(
-                target_id=target.id, kind=disc.kind, value=disc.value, source=disc.source,
-                in_scope=in_scope, approved=False, first_seen_at=now, last_seen_at=now,
-            ))
-            added += 1
-
-    AuditService.append(
-        db, actor=f"user:{user.username}", action="PASSIVE_SCAN_COMPLETED",
-        object_type="target", object_id=target.id,
-        payload={
-            "tool": result.tool, "tool_version": result.tool_version,
-            "assets_added": added, "assets_updated": updated,
-        },
+    execution = ScanExecution(
+        target_id=target.id, requested_by_id=user.id, profile="PASSIVE",
+        classification="PASSIVE", state="QUEUED", queued_at=now,
     )
-    db.add(Notification(
-        user_id=user.id, kind="SCAN_COMPLETED", title="Passive discovery completed",
-        body=(
-            f"{added} new / {updated} updated assets for {target.value}. "
-            "Discovered assets are unapproved and never inherit authorization."
-        ),
-    ))
+    db.add(execution)
+    db.flush()
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="SCAN_STATE_CHANGE",
+        object_type="scan_execution", object_id=execution.id,
+        payload={"from": "DRAFT", "to": "QUEUED", "profile": "PASSIVE"},
+    )
     db.commit()
-    return _target_dto(target)
+
+    from ..worker.tasks import run_execution
+
+    run_execution.delay(execution.id)
+    return {"execution_id": execution.id, "state": "QUEUED", "target_id": target.id}

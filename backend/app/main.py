@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import admin, audit, auth, notifications, targets
+from .api import admin, audit, auth, notifications, scans, schedules, targets
 from .bootstrap import create_all, seed_builtin_deny_rules
 from .config import get_settings
 from .services import ScopeError
@@ -45,6 +45,8 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(targets.router)
+    app.include_router(scans.router)
+    app.include_router(schedules.router)
     app.include_router(admin.router)
     app.include_router(audit.router)
     app.include_router(notifications.router)

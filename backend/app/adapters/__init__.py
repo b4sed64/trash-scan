@@ -1,15 +1,20 @@
 from .base import (
-    AdapterResult,
     DiscoveredAsset,
-    ScanInput,
+    DiscoveredObservation,
+    DiscoveredService,
     ScannerAdapter,
+    StageInput,
+    StageOutput,
 )
-from .fake import FakePassiveAdapter
+from .registry import get_adapter, passive_stages
 
 __all__ = [
-    "AdapterResult",
     "DiscoveredAsset",
-    "ScanInput",
+    "DiscoveredObservation",
+    "DiscoveredService",
     "ScannerAdapter",
-    "FakePassiveAdapter",
+    "StageInput",
+    "StageOutput",
+    "get_adapter",
+    "passive_stages",
 ]

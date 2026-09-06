@@ -87,15 +87,22 @@ def test_scanner_cannot_reach_admin_routes_or_unassigned_target(admin_client):
             "/api/targets", json={"value": "10.10.9.9"},
             headers={"X-CSRF-Token": sclient.cookies.get("trashscan_csrf")},
         ).status_code == 403
-        # passive discovery works on the assigned target
+        # passive discovery works on the assigned target (runs inline via eager Celery)
         pr = sclient.post(
-            f"/api/targets/{t1_id}/passive-scan",
+            f"/api/targets/{t1_id}/scans",
+            json={"profile": "PASSIVE"},
             headers={"X-CSRF-Token": sclient.cookies.get("trashscan_csrf")},
         )
-        assert pr.status_code == 200
-        assets = pr.json()["assets"]
-        assert assets, "expected discovered assets"
-        assert all(a["approved"] is False for a in assets), "discoveries must be unapproved"
+        assert pr.status_code == 201
+        assert pr.json()["classification"] == "PASSIVE"
+        target = sclient.get(f"/api/targets/{t1_id}").json()
+        assert target["assets"], "expected discovered assets"
+        assert all(a["approved"] is False for a in target["assets"]), "discoveries must be unapproved"
+        # a scanner cannot queue an active scan through the passive route
+        assert sclient.post(
+            f"/api/targets/{t1_id}/scans", json={"profile": "SAFE_ACTIVE"},
+            headers={"X-CSRF-Token": sclient.cookies.get("trashscan_csrf")},
+        ).status_code == 422
 
 
 def test_csrf_required_for_unsafe_requests(admin_client):

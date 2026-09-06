@@ -40,6 +40,40 @@ class Settings(BaseSettings):
 
     environment: str = "development"
 
+    # Queue / worker -------------------------------------------------------
+    redis_url: str = "redis://redis:6379/0"
+    celery_task_always_eager: bool = False
+    # "real" invokes pinned CLI tools; "fake" uses deterministic stub adapters.
+    scanner_mode: str = "real"
+    # Directory for per-execution bounded result directories.
+    result_root: str = "/app/artifacts/scans"
+    # Internal DNS resolvers for the lab (comma-separated). Empty = system.
+    dns_resolvers: str = ""
+
+    # Concurrency / rate controls (conservative defaults; PRD §22) ----------
+    max_global_executions: int = 2
+    max_per_target_executions: int = 1
+    max_parallel_stages: int = 2
+    dns_queries_per_second: int = 20
+    http_requests_per_second: int = 10
+    nuclei_requests_per_second: int = 10
+    retry_max: int = 1
+    retry_backoff_seconds: int = 5
+    max_response_bytes: int = 2_000_000
+    max_evidence_bytes: int = 8_000
+
+    # Time limits ---------------------------------------------------------
+    approval_window_minutes: int = 120
+    max_runtime_minutes: int = 120
+    cancel_grace_seconds: int = 10
+
+    # SYN scan + OS detection need raw-packet capability. Off until the
+    # Phase 0 spike proves the minimum Docker capability (PRD §19.1 / §28).
+    allow_raw_packet: bool = False
+
+    def resolver_list(self) -> list[str]:
+        return [r.strip() for r in self.dns_resolvers.split(",") if r.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

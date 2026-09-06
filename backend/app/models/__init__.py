@@ -164,6 +164,116 @@ class Notification(Base):
     read_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class Schedule(Base):
+    __tablename__ = "schedules"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    # PASSIVE | SAFE_ACTIVE | STANDARD_ACTIVE
+    profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    classification: Mapped[str] = mapped_column(String(8), nullable=False)  # PASSIVE | ACTIVE
+    # INTERVAL | DAILY
+    recurrence: Mapped[str] = mapped_column(String(12), nullable=False)
+    interval_minutes: Mapped[int | None] = mapped_column(Integer)
+    at_time: Mapped[str | None] = mapped_column(String(5))  # "HH:MM" for DAILY
+    timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    overlap_policy: Mapped[str] = mapped_column(String(8), default="SKIP")  # SKIP | ALLOW
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Hash of the frozen attestation-relevant fields; changing them invalidates
+    # a stored active attestation (PRD 8.2).
+    options_hash: Mapped[str] = mapped_column(String(64), default="")
+    attestation_text: Mapped[str | None] = mapped_column(Text)
+    attested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    attested_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    next_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    target: Mapped[Target] = relationship()
+
+
+class ScanExecution(Base):
+    __tablename__ = "scan_executions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    schedule_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("schedules.id"))
+    profile: Mapped[str] = mapped_column(String(20), nullable=False)
+    classification: Mapped[str] = mapped_column(String(8), nullable=False)  # PASSIVE | ACTIVE
+    # One of constants.SCAN_STATES
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    # Approval linkage (Phase 3).
+    approval_id: Mapped[str | None] = mapped_column(String(36))
+    approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Lifecycle timestamps.
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    queued_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    runtime_deadline_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cancel_reason: Mapped[str | None] = mapped_column(String(256))
+    partial: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    correlation_id: Mapped[str] = mapped_column(String(36), default=_uuid)
+
+    # Reproducibility metadata (SCAN-10).
+    stages: Mapped[list] = mapped_column(JSON, default=list)
+    tool_versions: Mapped[dict] = mapped_column(JSON, default=dict)
+    normalized_args: Mapped[dict] = mapped_column(JSON, default=dict)
+    parser_version: Mapped[str] = mapped_column(String(16), default="")
+    template_set_hash: Mapped[str] = mapped_column(String(64), default="")
+    result_dir: Mapped[str | None] = mapped_column(String(512))
+
+    target: Mapped[Target] = relationship()
+
+
+class Observation(Base):
+    __tablename__ = "observations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    asset_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("assets.id"))
+    execution_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("scan_executions.id"))
+    # DNS_RECORD | HTTP_HEADER | HTTP_STATUS | TLS | TECH | TITLE | OSINT
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    value: Mapped[str] = mapped_column(Text, default="")
+    source_tool: Mapped[str] = mapped_column(String(32), default="")
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("target_id", "kind", "key", "value", name="uq_observation"),
+    )
+
+
+class ScheduleOccurrence(Base):
+    __tablename__ = "schedule_occurrences"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    schedule_id: Mapped[str] = mapped_column(String(36), ForeignKey("schedules.id"), nullable=False)
+    scheduled_for: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # PENDING | AWAITING_APPROVAL | RUNNING | COMPLETED | EXPIRED | DENIED | CANCELLED | SKIPPED
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    execution_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("scan_executions.id"))
+    note: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("schedule_id", "scheduled_for", name="uq_occurrence"),
+    )
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 

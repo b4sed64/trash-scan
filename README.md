@@ -4,10 +4,12 @@ A self-hosted reconnaissance dashboard for a single student security team operat
 authorized virtual lab. See [`Trash_Scan_PRD.md`](Trash_Scan_PRD.md) for the full product
 definition.
 
-> **This repository currently implements Phase 1 (Foundation).** Passive discovery uses a
-> deterministic *fake* scanner adapter — no real scanner binaries are bundled yet and no
-> network traffic is sent. Active scanning, scheduling, Nuclei, reporting and the Celery
-> worker are later phases. See [`docs/PHASE1_STATUS.md`](docs/PHASE1_STATUS.md).
+> **This repository implements Phases 1–2.** Passive discovery (Subfinder + dnsx) runs
+> asynchronously through a Celery worker against real, checksum-pinned tool binaries;
+> set `SCANNER_MODE=fake` for offline development. Active scanning (Nmap/httpx), the
+> approval workflow, Nuclei and reporting are later phases.
+> See [`docs/PHASE1_STATUS.md`](docs/PHASE1_STATUS.md) and
+> [`docs/PHASE2_STATUS.md`](docs/PHASE2_STATUS.md).
 
 ## Quick start (Docker Desktop on Windows)
 
@@ -23,7 +25,9 @@ Then open <http://localhost:8080> and complete first-run administrator setup.
 | Web dashboard | http://localhost:8080 | nginx serving the built SPA, proxies `/api` |
 | API (direct) | http://localhost:8000 | FastAPI; OpenAPI docs at `/docs` |
 | PostgreSQL | internal | volume `db_data` |
-| Redis | internal | reserved for the Phase 3 worker/scheduler |
+| Redis | internal | Celery broker/result backend |
+| worker | internal | Celery worker — runs scan executions |
+| beat | internal | Celery beat — `scheduler_tick` + `lifecycle_sweep` every 30 s |
 
 ### Optional seed data
 
@@ -53,8 +57,8 @@ session invalidation on account disable, and the fake adapter.
 | Web client | React + TypeScript + Vite, served by nginx | Implemented |
 | API | Python FastAPI (sync SQLAlchemy 2.0) | Implemented |
 | Database | PostgreSQL 16, Alembic migrations | Implemented |
-| Queue / scheduler | Redis + Celery | **Deferred to Phase 3** (Redis container present, unused) |
-| Scan worker | Python + pinned CLI tools | **Fake adapter only** |
+| Queue / scheduler | Redis + Celery (`worker`, `beat`) | Implemented |
+| Scan worker | Python + pinned CLI tools | Subfinder + dnsx (real); Nmap/httpx in Phase 3 |
 | Reports | Jinja2 + WeasyPrint / CSV | **Deferred to Phase 5** |
 
 ### Security-critical modules (require human review on every change)

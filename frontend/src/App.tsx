@@ -5,6 +5,7 @@ import { Admin } from "./pages/Admin";
 import { Audit } from "./pages/Audit";
 import { Dashboard } from "./pages/Dashboard";
 import { Login } from "./pages/Login";
+import { Scans } from "./pages/Scans";
 import { Setup } from "./pages/Setup";
 import { TargetDetail } from "./pages/TargetDetail";
 import { Targets } from "./pages/Targets";
@@ -22,6 +23,7 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/targets" element={<Targets />} />
         <Route path="/targets/:id" element={<TargetDetail />} />
+        <Route path="/scans" element={<Scans />} />
         <Route path="/audit" element={<Audit />} />
         {me.role === "ADMINISTRATOR" && <Route path="/admin" element={<Admin />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

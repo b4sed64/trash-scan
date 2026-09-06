@@ -1,0 +1,81 @@
+# Trash Scan
+
+A self-hosted reconnaissance dashboard for a single student security team operating an
+authorized virtual lab. See [`Trash_Scan_PRD.md`](Trash_Scan_PRD.md) for the full product
+definition.
+
+> **This repository currently implements Phase 1 (Foundation).** Passive discovery uses a
+> deterministic *fake* scanner adapter — no real scanner binaries are bundled yet and no
+> network traffic is sent. Active scanning, scheduling, Nuclei, reporting and the Celery
+> worker are later phases. See [`docs/PHASE1_STATUS.md`](docs/PHASE1_STATUS.md).
+
+## Quick start (Docker Desktop on Windows)
+
+```sh
+cp .env.example .env        # optional; edit POSTGRES_PASSWORD etc.
+docker compose up --build
+```
+
+Then open <http://localhost:8080> and complete first-run administrator setup.
+
+| Service | URL | Notes |
+|---|---|---|
+| Web dashboard | http://localhost:8080 | nginx serving the built SPA, proxies `/api` |
+| API (direct) | http://localhost:8000 | FastAPI; OpenAPI docs at `/docs` |
+| PostgreSQL | internal | volume `db_data` |
+| Redis | internal | reserved for the Phase 3 worker/scheduler |
+
+### Optional seed data
+
+```sh
+RUN_SEED=1 docker compose up --build
+```
+
+Creates a lab range `10.10.0.0/16`, an enabled `scanner` account, and one target assigned
+to it. Credentials come from `.env` — change them before using this anywhere real.
+
+## Running the tests
+
+```sh
+docker build -t trashscan-api ./backend
+docker run --rm -e TRASHSCAN_ENABLE_DNS_RESOLUTION=false trashscan-api pytest
+```
+
+The suite (40 tests) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
+(including tamper detection), role + assignment enforcement through the HTTP API, CSRF,
+session invalidation on account disable, and the fake adapter.
+
+## Architecture (this phase)
+
+| Component | Technology | Status |
+|---|---|---|
+| Web client | React + TypeScript + Vite, served by nginx | Implemented |
+| API | Python FastAPI (sync SQLAlchemy 2.0) | Implemented |
+| Database | PostgreSQL 16, Alembic migrations | Implemented |
+| Queue / scheduler | Redis + Celery | **Deferred to Phase 3** (Redis container present, unused) |
+| Scan worker | Python + pinned CLI tools | **Fake adapter only** |
+| Reports | Jinja2 + WeasyPrint / CSV | **Deferred to Phase 5** |
+
+### Security-critical modules (require human review on every change)
+
+- [`backend/app/services/scope_service.py`](backend/app/services/scope_service.py) — target
+  canonicalization and active-scope enforcement (deny-first, containment, ambiguity).
+- [`backend/app/services/authorization_service.py`](backend/app/services/authorization_service.py)
+  — deny-by-default role and assignment checks.
+- [`backend/app/services/audit_service.py`](backend/app/services/audit_service.py) — the
+  append-only SHA-256 hash chain and its verifier.
+- [`backend/app/security.py`](backend/app/security.py) — Argon2id password hashing, session
+  and CSRF tokens.
+
+## Data & backup
+
+State lives in the `db_data` Docker volume. See
+[`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
+
+## Safety boundary
+
+Trash Scan performs passive discovery and (in later phases) authorized active
+reconnaissance only. It does not exploit vulnerabilities, test credentials, brute-force
+names, cause denial of service, or provide evasion controls. Its technical controls
+supplement — they do not replace — the team's responsibility to obtain permission.

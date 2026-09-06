@@ -1,0 +1,17 @@
+# Pinned dependencies for the Trash Scan API and worker (Phase 1 foundation).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+starlette==0.41.3
+pydantic==2.10.4
+pydantic-settings==2.7.0
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+argon2-cffi==23.1.0
+python-multipart==0.0.20
+idna==3.10
+python-dateutil==2.9.0.post0
+
+# Test / dev tooling
+pytest==8.3.4
+httpx==0.28.1

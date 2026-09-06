@@ -1,0 +1,53 @@
+# Trash Scan — Phase 1 foundation stack for Docker Desktop on Windows.
+#
+#   docker compose up --build
+#
+# Then open http://localhost:8080 and complete first-run administrator setup.
+services:
+  db:
+    image: postgres:16.6-bookworm
+    environment:
+      POSTGRES_USER: trashscan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trashscan}
+      POSTGRES_DB: trashscan
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trashscan"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4.1-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  api:
+    build: ./backend
+    command: ["sh", "entrypoint.sh"]
+    environment:
+      TRASHSCAN_DATABASE_URL: postgresql+psycopg://trashscan:${POSTGRES_PASSWORD:-trashscan}@db:5432/trashscan
+      TRASHSCAN_AUTO_CREATE: "0"
+      TRASHSCAN_SESSION_COOKIE_SECURE: "false"
+      TRASHSCAN_FRONTEND_ORIGIN: "http://localhost:8080"
+      TRASHSCAN_ENABLE_DNS_RESOLUTION: "true"
+      TRASHSCAN_REDIS_URL: redis://redis:6379/0
+      TRASHSCAN_RUN_SEED: "${RUN_SEED:-0}"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - artifacts:/app/artifacts
+    ports:
+      - "8000:8000"
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  db_data:
+  artifacts:

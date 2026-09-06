@@ -35,6 +35,10 @@ class AccountUpdate(BaseModel):
     is_active: bool
 
 
+class PasswordReset(BaseModel):
+    new_password: str = Field(min_length=12, max_length=256)
+
+
 def _user_dto(u: User) -> dict:
     return {
         "id": u.id, "username": u.username, "role": u.role,
@@ -68,6 +72,28 @@ def create_account(body: AccountCreate, admin: User = Depends(require_admin),
     )
     db.commit()
     return _user_dto(user)
+
+
+@router.post("/accounts/{user_id}/reset-password", dependencies=[Depends(require_csrf)])
+def reset_password(user_id: str, body: PasswordReset, admin: User = Depends(require_admin),
+                   db: Session = Depends(get_db)) -> dict:
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    user.password_hash = hash_password(body.new_password)
+    # Force the account to re-authenticate everywhere (AUTH-04).
+    db.execute(
+        update(SessionRecord)
+        .where(SessionRecord.user_id == user_id, SessionRecord.revoked.is_(False))
+        .values(revoked=True)
+    )
+    AuditService.append(
+        db, actor=f"user:{admin.username}", action="PASSWORD_RESET",
+        object_type="user", object_id=user.id,
+        payload={"target_user": user.username, "sessions_revoked": True},
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.patch("/accounts/{user_id}", dependencies=[Depends(require_csrf)])

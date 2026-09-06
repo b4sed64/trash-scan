@@ -1,16 +1,18 @@
 :root {
-  --charcoal: #171b19;
-  --charcoal-raised: #21261f;
-  --charcoal-sunk: #12140f;
+  /* Charcoal + forest-green + amber, a touch deeper than the first cut for a
+     stealthier feel without going fully monochrome. */
+  --charcoal: #1c211e;
+  --charcoal-raised: #242b26;
+  --charcoal-sunk: #151915;
   --forest: #2f6b4f;
   --forest-bright: #3c8b66;
   --sage: #9db8a6;
   --offwhite: #eef2ec;
   --amber: #d99a2b;
   --danger: #c65b52;
-  --border: #333a33;
-  --border-soft: rgba(255, 255, 255, 0.08);
-  --text-dim: #9aa79d;
+  --border: #38413a;
+  --border-soft: rgba(255, 255, 255, 0.07);
+  --text-dim: #a4afa5;
 
   /* Severity — data-viz status palette (dark steps), each also carries a label. */
   --sev-critical: #d03b3b;
@@ -63,14 +65,23 @@ input, select, textarea {
 
 label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(--text-dim); }
 
-.layout { display: flex; min-height: 100vh; }
+.layout { display: flex; min-height: 100vh; align-items: flex-start; }
 .sidebar {
-  width: 220px;
+  width: 224px;
   background: var(--charcoal-raised);
   border-right: 1px solid var(--border);
   padding: 1rem;
   flex-shrink: 0;
+  /* Sticky, viewport-height column: nav stays put and the raccoon watermark
+     stays anchored to the visible bottom-left on long pages. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+.sidebar nav { display: flex; flex-direction: column; gap: 1px; }
 .sidebar h1 { font-size: 1.1rem; margin: 0 0 1rem; }
 .sidebar nav a {
   display: block;
@@ -78,9 +89,12 @@ label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(-
   border-radius: 6px;
   text-decoration: none;
   color: var(--offwhite);
+  font-size: 0.94rem;
 }
-.sidebar nav a.active { background: var(--forest); }
-.content { flex: 1; padding: 1.5rem 2rem; max-width: 1100px; }
+.sidebar nav a:hover { background: var(--charcoal-sunk); }
+.sidebar nav a.active { background: var(--forest); color: #fff; }
+.sidebar .spacer { flex: 1; }
+.content { flex: 1; min-width: 0; padding: 1.5rem 2rem; max-width: 1180px; }
 
 .card {
   background: var(--charcoal-raised);
@@ -164,18 +178,84 @@ th { color: var(--text-dim); font-weight: 600; }
 .brand .raccoon { color: var(--sage); }
 .brand small { display: block; color: var(--text-dim); font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; }
 
-.sidebar { position: relative; overflow: hidden; }
 .sidebar-watermark {
   position: absolute;
-  right: -40px;
-  bottom: -40px;
-  width: 170px;
-  height: 170px;
-  color: var(--offwhite);
-  opacity: 0.035;
+  right: -34px;
+  bottom: -30px;
+  width: 150px;
+  height: 150px;
+  color: var(--sage);
+  opacity: 0.06;
   pointer-events: none;
 }
 .sidebar-watermark .raccoon-head { display: none; }
+.brand-account {
+  display: block;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.brand-account:hover { background: var(--charcoal-sunk); color: var(--offwhite); }
+.brand-account strong { color: var(--offwhite); }
+
+/* ---- notification bell ---- */
+.bell-wrap { position: relative; margin: 0.4rem 0 0.2rem; }
+.bell-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--offwhite);
+  justify-content: flex-start;
+}
+.bell-btn:hover { background: var(--charcoal-sunk); }
+.bell-badge {
+  margin-left: auto;
+  background: var(--amber);
+  color: #1c211e;
+  border-radius: 999px;
+  min-width: 1.3rem;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.35rem;
+}
+.bell-panel {
+  position: fixed;
+  left: 12px;
+  top: 200px;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  z-index: 50;
+  background: var(--charcoal-raised);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 65vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+.bell-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.bell-panel ul { list-style: none; margin: 0; padding: 0; }
+.bell-panel li {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 0.85rem;
+}
+.bell-panel li.unread { border-left: 3px solid var(--amber); }
+.bell-panel li .t { display: block; color: var(--offwhite); }
+.bell-panel li .b { color: var(--text-dim); }
 
 /* ---- dashboard ---- */
 .stat-row {

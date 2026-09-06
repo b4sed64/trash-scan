@@ -1,12 +1,12 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
+import { Account } from "./pages/Account";
 import { Admin } from "./pages/Admin";
+import { Approvals } from "./pages/Approvals";
 import { Audit } from "./pages/Audit";
 import { Dashboard } from "./pages/Dashboard";
-import { Approvals } from "./pages/Approvals";
 import { Login } from "./pages/Login";
-import { Reports } from "./pages/Reports";
 import { Scans } from "./pages/Scans";
 import { Setup } from "./pages/Setup";
 import { TargetDetail } from "./pages/TargetDetail";
@@ -26,8 +26,9 @@ export function App() {
         <Route path="/targets" element={<Targets />} />
         <Route path="/targets/:id" element={<TargetDetail />} />
         <Route path="/scans" element={<Scans />} />
-        <Route path="/reports" element={<Reports />} />
         <Route path="/audit" element={<Audit />} />
+        <Route path="/account" element={<Account />} />
+        <Route path="/reports" element={<Navigate to="/" replace />} />
         {me.role === "ADMINISTRATOR" && <Route path="/approvals" element={<Approvals />} />}
         {me.role === "ADMINISTRATOR" && <Route path="/admin" element={<Admin />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

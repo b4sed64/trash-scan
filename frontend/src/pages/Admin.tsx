@@ -103,6 +103,26 @@ export function Admin() {
                     )}
                   >
                     {a.is_active ? "Disable" : "Enable"}
+                  </button>{" "}
+                  <button
+                    className="secondary"
+                    onClick={wrap(async () => {
+                      const pw = window.prompt(
+                        `Set a new password for ${a.username} (min 12 characters). ` +
+                          "Their active sessions will be signed out.",
+                      );
+                      if (!pw) return;
+                      if (pw.length < 12) {
+                        window.alert("Password must be at least 12 characters.");
+                        return;
+                      }
+                      await api.post(`/api/admin/accounts/${a.id}/reset-password`, {
+                        new_password: pw,
+                      });
+                      window.alert(`Password reset for ${a.username}.`);
+                    })}
+                  >
+                    Reset password
                   </button>
                 </td>
               </tr>

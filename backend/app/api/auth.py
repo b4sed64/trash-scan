@@ -27,6 +27,11 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+
 def _client(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
@@ -123,6 +128,38 @@ def logout(response: Response, session: SessionRecord = Depends(get_current_sess
     )
     db.commit()
     _clear_session_cookies(response)
+    return {"ok": True}
+
+
+@router.post("/change-password", dependencies=[Depends(require_csrf)])
+def change_password(body: ChangePasswordRequest, request: Request,
+                    session: SessionRecord = Depends(get_current_session),
+                    user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)) -> dict:
+    if not verify_password(user.password_hash, body.current_password):
+        AuditService.append(
+            db, actor=f"user:{user.username}", action="AUTH_FAILURE",
+            object_type="user", object_id=user.id,
+            payload={"ip": _client(request), "reason": "change_password_bad_current"},
+        )
+        db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is incorrect")
+    if body.new_password == body.current_password:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "new password must differ from the current one")
+
+    user.password_hash = hash_password(body.new_password)
+    # Invalidate every other session for this user; keep the caller's.
+    db.query(SessionRecord).filter(
+        SessionRecord.user_id == user.id,
+        SessionRecord.id != session.id,
+        SessionRecord.revoked.is_(False),
+    ).update({"revoked": True})
+    AuditService.append(
+        db, actor=f"user:{user.username}", action="PASSWORD_CHANGED",
+        object_type="user", object_id=user.id, payload={"ip": _client(request), "self": True},
+    )
+    db.commit()
     return {"ok": True}
 
 

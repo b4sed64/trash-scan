@@ -1,8 +1,10 @@
-# Trash Scan — Phases 1–2 stack for Docker Desktop on Windows.
+# Trash Scan — full stack (API, worker, beat, web, Postgres, Redis) for Docker
+# Desktop on Windows; portable to Linux / Kali.
 #
 #   docker compose up --build
 #
 # Then open http://localhost:8080 and complete first-run administrator setup.
+# Offline demo:  SCANNER_MODE=fake docker compose up -d --build  &&  ./scripts/demo_seed.sh
 services:
   db:
     image: postgres:16.6-bookworm

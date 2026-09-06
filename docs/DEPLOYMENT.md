@@ -16,8 +16,8 @@ Open <http://localhost:8080> and complete first-run administrator setup.
 
 | Task | Command |
 |---|---|
-| Demo mode (fake scanners, no traffic) | `SCANNER_MODE=fake docker compose up -d --build` |
-| Seed sample data | `RUN_SEED=1 docker compose up -d --build` |
+| Demo mode (fake scanners, no traffic) | `SCANNER_MODE=fake docker compose up -d --build` then `./scripts/demo_seed.sh` |
+| Minimal seed (lab CIDR + one scanner + one target) | `RUN_SEED=1 docker compose up -d --build` |
 | Stop | `docker compose down` |
 | Stop and wipe all data | `docker compose down -v` |
 | Follow logs | `docker compose logs -f api worker beat` |

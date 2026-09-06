@@ -1,14 +1,14 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
   ApiError,
   ComparisonResult,
-  Execution,
   FindingRow,
   ObservationRow,
   OccurrenceRow,
   ReportRow,
+  ScanGroup,
   ScheduleRow,
   ServiceRow,
   Target,
@@ -52,7 +52,7 @@ export function TargetDetail() {
 
   const [target, setTarget] = useState<Target | null>(null);
   const [scope, setScope] = useState<ScopePreview | null>(null);
-  const [scans, setScans] = useState<Execution[]>([]);
+  const [scans, setScans] = useState<ScanGroup[]>([]);
   const [observations, setObservations] = useState<ObservationRow[]>([]);
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [findings, setFindings] = useState<FindingRow[]>([]);
@@ -82,7 +82,11 @@ export function TargetDetail() {
   const load = useCallback(async () => {
     setTarget(await api.get<Target>(`/api/targets/${id}`));
     setScope(await api.get<ScopePreview>(`/api/targets/${id}/scope-preview`));
-    setScans((await api.get<Execution[]>("/api/scans")).filter((s) => s.target_id === id));
+    setScans(
+      (await api.get<ScanGroup[]>("/api/scans")).filter((s) =>
+        s.targets.some((t) => t.id === id),
+      ),
+    );
     setObservations(await api.get<ObservationRow[]>(`/api/targets/${id}/observations`));
     setServices(await api.get<ServiceRow[]>(`/api/targets/${id}/services`));
     setFindings(await api.get<FindingRow[]>(`/api/targets/${id}/findings`));
@@ -464,38 +468,54 @@ export function TargetDetail() {
             <tr>
               <th>Created</th>
               <th>Profile</th>
-              <th>State</th>
-              <th>Stages</th>
+              <th>Scan State</th>
+              <th>This Target</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {scans.slice(0, 10).map((s) => (
-              <tr key={s.id}>
-                <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
-                <td>
-                  {s.profile}
-                  {s.schedule_id ? " · scheduled" : ""}
-                </td>
-                <td>
-                  <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
-                  {s.partial && <span className="badge warn"> partial</span>}
-                </td>
-                <td className="muted">
-                  {(s.stages ?? []).map((st) => `${st.stage}${st.ok ? "" : "✗"}`).join(", ")}
-                </td>
-                <td>
-                  {!TERMINAL.includes(s.state) && (
-                    <button
-                      className="secondary"
-                      onClick={call(() => api.post(`/api/scans/${s.id}/cancel`, { reason: "" }))}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {scans.slice(0, 10).map((s) => {
+              const here = s.targets.find((t) => t.id === id);
+              return (
+                <tr key={s.scan_id}>
+                  <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
+                  <td>
+                    {s.profile}
+                    {s.schedule_id ? " · scheduled" : ""}
+                    {s.target_count > 1 ? ` · ${s.target_count} targets` : ""}
+                  </td>
+                  <td>
+                    <Link to={`/scans/${s.scan_id}`}>
+                      <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
+                    </Link>
+                  </td>
+                  <td>
+                    <span className={`badge ${stateBadge(here?.state ?? "")}`}>
+                      {here?.state ?? "—"}
+                    </span>
+                  </td>
+                  <td>
+                    {s.state === "APPROVED" && (
+                      <button
+                        onClick={call(() => api.post(`/api/scans/${s.scan_id}/start`))}
+                      >
+                        Start
+                      </button>
+                    )}
+                    {!TERMINAL.includes(s.state) && (
+                      <button
+                        className="secondary"
+                        onClick={call(() =>
+                          api.post(`/api/scans/${s.scan_id}/stop`, { reason: "" }),
+                        )}
+                      >
+                        Stop
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {scans.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted">

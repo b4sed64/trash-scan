@@ -35,9 +35,10 @@ export function Approvals() {
       <h2>Approvals</h2>
       {error && <p className="error">{error}</p>}
       <p className="notice">
-        Every active execution — including every scheduled occurrence — needs a fresh
-        approval. An approval authorizes exactly one run and expires if it has not started
-        within two hours.
+        Every active scan — including every scheduled occurrence — needs a fresh approval. One
+        approval covers the whole scan (all its targets), authorizes exactly one run, and does
+        not start it: the requester presses Start, which must happen within two hours or the
+        approval expires. Scheduled occurrences start automatically on approval.
       </p>
 
       <section className="card">
@@ -47,10 +48,19 @@ export function Approvals() {
           <div key={a.id} className="card" style={{ background: "var(--charcoal)" }}>
             <p>
               <strong>{a.profile}</strong> on{" "}
-              <Link to={`/targets/${a.target?.id}`}>{a.target?.value}</Link> — requested by{" "}
-              {a.requested_by ?? "?"}
+              {a.target_count > 1 ? (
+                <Link to={`/scans/${a.scan_id}`}>{a.target_count} targets</Link>
+              ) : (
+                <Link to={`/targets/${a.target?.id}`}>{a.target?.value}</Link>
+              )}{" "}
+              — requested by {a.requested_by ?? "?"}
               {a.schedule_id ? " · scheduled occurrence" : ""}
             </p>
+            {a.target_count > 1 && (
+              <p className="muted">
+                Targets: {a.targets.map((t) => t.value).join(", ")}
+              </p>
+            )}
             <p className="muted">Attestation: “{a.attestation_text}”</p>
             <p className="muted">
               Scope at request:{" "}
@@ -66,7 +76,7 @@ export function Approvals() {
             <div className="row">
               <button onClick={act(a.id, "approve")}>Approve (One Run, 2h to Start)</button>
               <input
-                placeholder="denial reason"
+                placeholder="Denial Reason"
                 value={reason[a.id] ?? ""}
                 onChange={(e) => setReason({ ...reason, [a.id]: e.target.value })}
               />
@@ -97,7 +107,7 @@ export function Approvals() {
                 <td>{a.profile}</td>
                 <td>{a.state}</td>
                 <td>
-                  <Link to={`/scans`}>{a.execution_state}</Link>
+                  <Link to={`/scans/${a.scan_id}`}>{a.execution_state}</Link>
                 </td>
                 <td className="muted">{a.decision_reason || "—"}</td>
               </tr>

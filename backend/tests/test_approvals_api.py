@@ -64,15 +64,21 @@ def test_active_scan_requires_exact_attestation_and_approval(setup):
         assert sc.post(f"/api/approvals/{approval_id}/approve",
                        headers={"X-CSRF-Token": _csrf(sc)}).status_code == 403
 
-        # admin approves -> execution runs to a terminal state (eager Celery, fake tools)
+        # admin approves -> the scan is APPROVED but does NOT run yet
         assert _p(admin, f"/api/approvals/{approval_id}/approve").status_code == 200
         detail = admin.get(f"/api/approvals/{approval_id}").json()
         assert detail["state"] == "APPROVED"
-        ex_state = admin.get(f"/api/scans/{detail['execution_id']}").json()["state"]
-        assert ex_state in ("COMPLETED", "RUNNING", "QUEUED")
+        scan_id = detail["scan_id"]
+        assert admin.get(f"/api/scans/{scan_id}").json()["state"] == "APPROVED"
 
         # replay: approving the same approval again is a conflict
         assert _p(admin, f"/api/approvals/{approval_id}/approve").status_code == 409
+
+        # the requester presses Start -> it runs (eager Celery, fake tools)
+        assert _p(sc, f"/api/scans/{scan_id}/start").status_code == 200
+        assert admin.get(f"/api/scans/{scan_id}").json()["state"] in (
+            "COMPLETED", "RUNNING", "QUEUED"
+        )
     finally:
         sc.__exit__(None, None, None)
 

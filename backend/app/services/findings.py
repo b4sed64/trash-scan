@@ -46,6 +46,9 @@ def record_findings(db: Session, execution: ScanExecution, stage_outputs) -> dic
         a.value: a.id
         for a in db.execute(select(Asset).where(Asset.target_id == target_id)).scalars()
     }
+    # A tool can report the same indicator more than once in a run (e.g. once per
+    # probed URL for the same host). Record exactly one sighting per finding.
+    sighted: set[str] = set()
 
     for out in stage_outputs:
         for f in getattr(out, "findings", []):
@@ -85,6 +88,9 @@ def record_findings(db: Session, execution: ScanExecution, stage_outputs) -> dic
                 existing.last_execution_id = execution.id
                 finding = existing
 
+            if finding.id in sighted:
+                continue
+            sighted.add(finding.id)
             db.add(FindingSighting(
                 finding_id=finding.id, execution_id=execution.id, severity=f.severity,
                 evidence_key=f.evidence_key, seen_at=now,

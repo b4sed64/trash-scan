@@ -27,7 +27,13 @@
 body {
   margin: 0;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: var(--charcoal);
+  background-color: var(--charcoal);
+  /* Faint watermark: the raccoon and the raccoon-in-a-bin, each turned 45° CCW.
+     The silhouette + low opacity are baked into the SVG so page content is
+     unaffected. */
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='340'%3E%3Cdefs%3E%3Cfilter id='s'%3E%3CfeFlood flood-color='white' result='f'/%3E%3CfeComposite in='f' in2='SourceAlpha' operator='in'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23s)' opacity='0.04'%3E%3Ctext x='80' y='96' font-size='60' text-anchor='middle' transform='rotate(-45 80 80)'%3E%F0%9F%A6%9D%3C/text%3E%3Cg transform='rotate(-45 242 236)'%3E%3Ctext x='242' y='224' font-size='52' text-anchor='middle'%3E%F0%9F%A6%9D%3C/text%3E%3Ctext x='242' y='266' font-size='58' text-anchor='middle'%3E%F0%9F%97%91%EF%B8%8F%3C/text%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  background-size: 340px 340px;
+  background-attachment: fixed;
   color: var(--offwhite);
   line-height: 1.5;
 }
@@ -201,12 +207,31 @@ th { color: var(--text-dim); font-weight: 600; }
   line-height: 1;
 }
 
-/* login: standalone mark, centred in the window above the card */
-.login-mark {
-  font-size: 56px;
+/* login: the raccoon poking up out of a tipped-open bin, centred above the card */
+.login-raccoon {
+  position: relative;
+  width: 160px;
+  height: 148px;
+  margin: 0 auto 1rem;
+}
+.login-raccoon .lr-coon {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-52%);
+  font-size: 84px;
   line-height: 1;
-  text-align: center;
-  margin-bottom: 0.9rem;
+  z-index: 1;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+}
+.login-raccoon .lr-can {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  font-size: 116px;
+  line-height: 1;
+  z-index: 2;
 }
 
 /* ---- password field ---- */

@@ -142,6 +142,71 @@ export interface Execution {
   parser_version: string;
 }
 
+export interface ScanGroupTarget {
+  id: string;
+  value: string;
+  kind: string;
+  execution_id: string;
+  state: string;
+}
+
+export interface ScanGroup {
+  scan_id: string;
+  profile: string;
+  classification: string;
+  state: string;
+  requested_by_id: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  target_count: number;
+  targets: ScanGroupTarget[];
+  schedule_id: string | null;
+  approval: {
+    id: string;
+    state: string;
+    expires_at: string | null;
+    decided_by_id: string | null;
+    decision_reason: string | null;
+  } | null;
+  options: Record<string, unknown> | null;
+}
+
+export interface ScanHostBlock {
+  execution_id: string;
+  target: { id: string; value: string; kind: string };
+  state: string;
+  partial: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  stages: { stage: string; tool: string; ok: boolean; incomplete: boolean; note: string }[] | null;
+  tool_versions: Record<string, string> | null;
+  assets: { kind: string; value: string; source: string; in_scope: boolean; approved: boolean }[];
+  services: { port: number; protocol: string; state: string; product: string; version: string }[];
+  findings: {
+    id: string;
+    severity: string;
+    name: string;
+    rule_id: string;
+    asset_value: string;
+    port: number | null;
+    status: string;
+    evidence_summary: string;
+  }[];
+}
+
+export interface ScanGroupDetail extends ScanGroup {
+  hosts: ScanHostBlock[];
+  summary: {
+    severity_counts: Record<string, number>;
+    total_findings: number;
+    needs_attention: number;
+    hosts_total: number;
+    hosts_completed: number;
+  };
+}
+
 export interface ObservationRow {
   id: string;
   kind: string;
@@ -198,10 +263,13 @@ export interface ServiceRow {
 
 export interface Approval {
   id: string;
+  scan_id: string;
   execution_id: string;
   state: string;
   profile: string;
   target: { id: string; value: string; kind: string } | null;
+  targets: { id: string; value: string; kind: string; execution_id: string; state: string }[];
+  target_count: number;
   requested_by: string | null;
   attestation_text: string;
   requested_options: Record<string, unknown>;

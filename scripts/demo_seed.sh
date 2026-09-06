@@ -5,9 +5,10 @@
 #   ./scripts/demo_seed.sh
 #
 # Creates an administrator + scanner, a lab range, two assigned targets, a
-# completed passive scan, two approved active scans (SAFE then STANDARD) so the
-# baseline comparison shows STILL_OBSERVED + NEW, one pending approval, and a
-# generated PDF + CSV export. Idempotent-ish: run against a fresh volume.
+# completed passive scan, two approved-and-started active scans (SAFE then
+# STANDARD) so the baseline comparison shows STILL_OBSERVED + NEW, one scan left
+# pending approval, and a generated PDF + CSV export. Idempotent-ish: run against
+# a fresh volume.
 set -e
 
 BASE="${TRASHSCAN_BASE:-http://localhost:8080}"
@@ -59,8 +60,10 @@ run_active() {
   aid="$(api "$BASE/api/approvals?include_decided=false" | id_of)"
   echo "==> approving $profile active scan ($aid)"
   api -X POST "$BASE/api/approvals/$aid/approve" > /dev/null
-  ex="$(api "$BASE/api/approvals/$aid" | grep -oE '"execution_id":"[^"]+"' | head -1 | cut -d'"' -f4)"
-  wait_scan "$ex"
+  sid="$(api "$BASE/api/approvals/$aid" | grep -oE '"scan_id":"[^"]+"' | head -1 | cut -d'"' -f4)"
+  echo "==> starting scan $sid"
+  api -X POST "$BASE/api/scans/$sid/start" > /dev/null
+  wait_scan "$sid"
 }
 
 run_active SAFE_ACTIVE

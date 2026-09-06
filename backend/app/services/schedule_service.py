@@ -116,9 +116,12 @@ def tick(db: Session, *, enqueue) -> dict:
                 occ.note = "previous occurrence still active"
                 skipped += 1
             elif sched.classification == "PASSIVE":
+                import uuid as _uuid_mod
+
                 execution = ScanExecution(
                     target_id=sched.target_id, requested_by_id=sched.created_by_id,
                     schedule_id=sched.id, profile=sched.profile, classification="PASSIVE",
+                    scan_group_id=str(_uuid_mod.uuid4()), group_seq=1, group_size=1,
                     state="QUEUED", queued_at=now, options=sched.options or {},
                 )
                 db.add(execution)
@@ -142,16 +145,20 @@ def tick(db: Session, *, enqueue) -> dict:
                     object_type="schedule", object_id=sched.id, payload={},
                 )
             else:  # ACTIVE — never auto-run; create a fresh approval request (PRD 8.2)
+                import uuid as _uuid_mod
+
+                group_id = str(_uuid_mod.uuid4())
                 execution = ScanExecution(
                     target_id=sched.target_id, requested_by_id=sched.created_by_id,
                     schedule_id=sched.id, profile=sched.profile, classification="ACTIVE",
+                    scan_group_id=group_id, group_seq=1, group_size=1,
                     state="DRAFT", options=sched.options or {},
                 )
                 db.add(execution)
                 db.flush()
                 execution.state = "AWAITING_APPROVAL"
                 approval = ScanApproval(
-                    execution_id=execution.id, target_id=sched.target_id,
+                    execution_id=execution.id, scan_group_id=group_id, target_id=sched.target_id,
                     requested_by_id=sched.created_by_id, schedule_id=sched.id,
                     occurrence_id=occ.id, profile=sched.profile,
                     attestation_text=sched.attestation_text or "(scheduled attestation)",

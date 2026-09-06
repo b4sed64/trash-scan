@@ -214,6 +214,11 @@ class ScanExecution(Base):
     target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
     requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
     schedule_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("schedules.id"))
+    # A scan may cover several targets; each target is one execution sharing a
+    # group id. A single-target scan is a group of one.
+    scan_group_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    group_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    group_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     profile: Mapped[str] = mapped_column(String(20), nullable=False)
     classification: Mapped[str] = mapped_column(String(8), nullable=False)  # PASSIVE | ACTIVE
     # One of constants.SCAN_STATES
@@ -257,6 +262,8 @@ class ScanApproval(Base):
     execution_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("scan_executions.id"), nullable=False
     )
+    # One approval covers the whole scan (all its per-target executions).
+    scan_group_id: Mapped[str | None] = mapped_column(String(36), index=True)
     target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
     requested_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
     schedule_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("schedules.id"))

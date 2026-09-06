@@ -7,6 +7,7 @@ import { Approvals } from "./pages/Approvals";
 import { Audit } from "./pages/Audit";
 import { Dashboard } from "./pages/Dashboard";
 import { Login } from "./pages/Login";
+import { ScanDetail } from "./pages/ScanDetail";
 import { Scans } from "./pages/Scans";
 import { Setup } from "./pages/Setup";
 import { TargetDetail } from "./pages/TargetDetail";
@@ -26,6 +27,7 @@ export function App() {
         <Route path="/targets" element={<Targets />} />
         <Route path="/targets/:id" element={<TargetDetail />} />
         <Route path="/scans" element={<Scans />} />
+        <Route path="/scans/:id" element={<ScanDetail />} />
         <Route path="/audit" element={<Audit />} />
         <Route path="/account" element={<Account />} />
         <Route path="/reports" element={<Navigate to="/" replace />} />

@@ -1,10 +1,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, EmergencyStopStatus, Execution, Target } from "../api";
+import { api, ApiError, EmergencyStopStatus, Execution, ScanGroup, Target } from "../api";
 import { useAuth } from "../auth";
 import { MultiSelect, Option } from "../components/MultiSelect";
 
-const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"];
+const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED", "PARTIAL"];
 const ACTIVE_ATTESTATION =
   "I attest this scan is authorized and will be used only for ethical, " +
   "non-exploitative reconnaissance";
@@ -28,14 +28,14 @@ interface PortPresets {
 export function stateBadge(state: string): string {
   if (state === "COMPLETED") return "ok";
   if (["FAILED", "TIMED_OUT", "DENIED", "EXPIRED"].includes(state)) return "bad";
-  if (["CANCELLED", "CANCELLING"].includes(state)) return "warn";
+  if (["CANCELLED", "CANCELLING", "PARTIAL"].includes(state)) return "warn";
   return "";
 }
 
 export function Scans() {
   const { me } = useAuth();
   const isAdmin = me?.role === "ADMINISTRATOR";
-  const [scans, setScans] = useState<Execution[]>([]);
+  const [scans, setScans] = useState<ScanGroup[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [portData, setPortData] = useState<PortPresets>({ presets: {}, port_sets: [] });
   const [stop, setStop] = useState<EmergencyStopStatus | null>(null);
@@ -51,7 +51,7 @@ export function Scans() {
   const [attestation, setAttestation] = useState("");
 
   const load = useCallback(async () => {
-    setScans(await api.get<Execution[]>("/api/scans").catch(() => []));
+    setScans(await api.get<ScanGroup[]>("/api/scans").catch(() => []));
     setTargets(await api.get<Target[]>("/api/targets").catch(() => []));
     if (isAdmin) {
       setStop(await api.get<EmergencyStopStatus>("/api/emergency-stop").catch(() => null));
@@ -72,7 +72,6 @@ export function Scans() {
     return () => clearInterval(id);
   }, [load, scans]);
 
-  const targetName = (id: string) => targets.find((t) => t.id === id)?.value ?? id.slice(0, 8);
   const isActive = profile !== "PASSIVE";
 
   const targetOptions: Option[] = targets
@@ -141,8 +140,8 @@ export function Scans() {
       const n = r.executions.length;
       setNotice(
         isActive
-          ? `${n} active scan${n === 1 ? "" : "s"} submitted for administrator approval.`
-          : `${n} passive scan${n === 1 ? "" : "s"} queued.`,
+          ? `One active scan over ${n} target${n === 1 ? "" : "s"} submitted for administrator approval.`
+          : `One passive scan over ${n} target${n === 1 ? "" : "s"} queued.`,
       );
       setTyped("");
       setPickedIds([]);
@@ -153,12 +152,14 @@ export function Scans() {
     }
   }
 
-  async function cancel(id: string) {
+  async function control(scanId: string, verb: "start" | "stop") {
+    setError("");
+    setNotice("");
     try {
-      await api.post(`/api/scans/${id}/cancel`, { reason: "cancelled from Scans view" });
+      await api.post(`/api/scans/${scanId}/${verb}`, verb === "stop" ? { reason: "stopped from Scans view" } : undefined);
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Cancel failed");
+      setError(e instanceof ApiError ? e.message : `${verb} failed`);
     }
   }
 
@@ -202,17 +203,18 @@ export function Scans() {
         <h3>New Scan</h3>
         <p className="muted">
           Defining a target does not queue anything. Pick any of your targets and/or type
-          additional hosts, IPs, or networks (CIDR) — one scan runs per target. Active profiles
-          need the typed attestation and a fresh administrator approval.
+          additional hosts, IPs, or networks (CIDR) — a single scan covers every target you
+          choose. Active profiles need the typed attestation and a fresh administrator approval,
+          then wait in the queue until you press Start.
         </p>
         <form onSubmit={submitScan}>
           <div className="row">
             <MultiSelect
-              label={`Select from your targets (${pickedIds.length} selected)`}
+              label={`Select From Your Targets (${pickedIds.length} selected)`}
               options={targetOptions}
               selected={pickedIds}
               onChange={setPickedIds}
-              placeholder="Choose targets…"
+              placeholder="Choose Targets…"
               emptyText="No defined targets yet."
             />
           </div>
@@ -258,7 +260,7 @@ export function Scans() {
                   options={portOptions}
                   selected={pickedPorts}
                   onChange={setPickedPorts}
-                  placeholder="Profile default"
+                  placeholder="Profile Default"
                   emptyText="No defined port sets."
                 />
               </div>
@@ -294,7 +296,7 @@ export function Scans() {
             style={{ marginTop: "0.7rem" }}
             disabled={isActive && attestation.trim() !== ACTIVE_ATTESTATION}
           >
-            {isActive ? "Submit for Approval" : "Start Passive Scan"}
+            {isActive ? "Submit for Approval" : "Queue Passive Scan"}
           </button>
         </form>
       </section>
@@ -313,44 +315,60 @@ export function Scans() {
           <table>
             <thead>
               <tr>
-                <th>Started</th>
-                <th>Target</th>
+                <th>Created</th>
+                <th>Targets</th>
                 <th>Profile</th>
                 <th>State</th>
-                <th>Stages</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {scans.map((s) => (
-                <tr key={s.id}>
-                  <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
-                  <td>
-                    <Link to={`/targets/${s.target_id}`}>{targetName(s.target_id)}</Link>
-                  </td>
-                  <td>
-                    {PROFILE_LABELS[s.profile] ?? s.profile}
-                    {s.schedule_id ? " · scheduled" : ""}
-                  </td>
-                  <td>
-                    <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
-                    {s.partial && <span className="badge warn"> partial</span>}
-                  </td>
-                  <td className="muted">
-                    {(s.stages ?? []).map((st) => `${st.stage}${st.ok ? "" : "✗"}`).join(", ")}
-                  </td>
-                  <td>
-                    {!TERMINAL.includes(s.state) && (
-                      <button className="secondary" onClick={() => void cancel(s.id)}>
-                        Cancel
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {scans.map((s) => {
+                const canStart = s.state === "APPROVED";
+                const canStop = !TERMINAL.includes(s.state);
+                return (
+                  <tr key={s.scan_id}>
+                    <td className="muted">{new Date(s.created_at).toLocaleString()}</td>
+                    <td>
+                      <Link to={`/scans/${s.scan_id}`}>
+                        {s.target_count === 1
+                          ? s.targets[0]?.value ?? s.scan_id.slice(0, 8)
+                          : `${s.target_count} targets`}
+                      </Link>
+                      {s.target_count > 1 && (
+                        <div className="muted" style={{ fontSize: "0.8rem" }}>
+                          {s.targets.map((t) => t.value).join(", ")}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {PROFILE_LABELS[s.profile] ?? s.profile}
+                      {s.schedule_id ? " · scheduled" : ""}
+                    </td>
+                    <td>
+                      <span className={`badge ${stateBadge(s.state)} status-dot`}>{s.state}</span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+                        {canStart && (
+                          <button onClick={() => void control(s.scan_id, "start")}>Start</button>
+                        )}
+                        {canStop && (
+                          <button className="secondary" onClick={() => void control(s.scan_id, "stop")}>
+                            Stop
+                          </button>
+                        )}
+                        <Link className="badge" to={`/scans/${s.scan_id}`}>
+                          Review
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {scans.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={5} className="muted">
                     No scans yet.
                   </td>
                 </tr>

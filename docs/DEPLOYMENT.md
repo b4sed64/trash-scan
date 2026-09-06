@@ -84,7 +84,7 @@ treating a missing response as proof that an asset does not exist.
 ## 3. Backup & restore
 
 See [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md). After any restore, log in and run
-**Audit trail → Verify chain now** — it must report "Chain intact".
+**Logs → Verify chain now** — it must report "Chain intact".
 
 ## 4. What is NOT included
 

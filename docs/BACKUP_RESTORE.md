@@ -33,7 +33,7 @@ docker compose up -d
 ## Verify after restore
 
 1. Log in as an administrator.
-2. Open **Audit trail → Verify chain now**. It must report "Chain intact".
+2. Open **Logs → Verify chain now**. It must report "Chain intact".
 3. Spot-check target and assignment counts.
 
 ## Notes

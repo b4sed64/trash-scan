@@ -182,6 +182,13 @@ class FakeNucleiAdapter:
                  "nginx/1.25.0"),
                 ("trashscan-nginx-default-page", "INFO", "Nginx Default Welcome Page", "body"),
             ]
+            if inp.profile == "STANDARD_ACTIVE":
+                # Broader profile surfaces one more indicator — makes NEW vs
+                # NOT_OBSERVED visible when alternating profiles in a demo.
+                catalogue.append(
+                    ("trashscan-directory-listing", "LOW", "Directory Listing Enabled",
+                     "Index of /")
+                )
             for rule_id, sev, name, ev in catalogue:
                 if rule_id == drop:
                     continue

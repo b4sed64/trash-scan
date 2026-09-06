@@ -164,25 +164,68 @@ th { color: var(--text-dim); font-weight: 600; }
 .inline-check input { width: auto; margin-top: 0.3rem; }
 
 /* ---- raccoon mark ---- */
-.raccoon-emoji { flex-shrink: 0; }
+.raccoon-emoji { flex-shrink: 0; line-height: 1; }
+
+/* sidebar: text block on the left, mark on the right, vertically centred */
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.6rem;
   margin: 0 0 1rem;
   color: var(--offwhite);
 }
+.brand .brand-text { min-width: 0; }
 .brand h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.02em; }
-.brand small { display: block; color: var(--text-dim); font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; }
+.brand small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 0.66rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.brand .raccoon-emoji { position: relative; top: -1px; }
+
+/* centred hero mark (login / setup): text centred, mark to its right */
+.hero-brand {
+  position: relative;
+  text-align: center;
+  margin: 0 0 0.4rem;
+}
+.hero-brand h1 { margin: 0; font-size: 1.4rem; }
+.hero-brand .raccoon-emoji {
+  position: absolute;
+  right: 0;
+  top: 44%;
+  transform: translateY(-50%);
+}
+
+/* ---- password field ---- */
+.pw-field { position: relative; }
+.pw-field input { padding-right: 2.6rem; }
+.pw-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 0.3rem;
+  background: transparent;
+  border: none;
+  color: var(--sage);
+  display: flex;
+}
+.pw-toggle:hover { color: var(--offwhite); }
+.pw-toggle[aria-pressed="true"] { color: var(--amber); }
 
 .sidebar-watermark {
   position: absolute;
-  right: -18px;
-  bottom: -26px;
-  font-size: 150px;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  font-size: 124px;
   line-height: 1;
-  opacity: 0.06;
-  filter: grayscale(0.15);
+  opacity: 0.07;
+  filter: grayscale(0.2);
   pointer-events: none;
   user-select: none;
 }

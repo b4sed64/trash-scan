@@ -8,6 +8,19 @@ const ACTIVE_ATTESTATION =
   "I attest this scan is authorized and will be used only for ethical, " +
   "non-exploitative reconnaissance";
 
+const PROFILE_LABELS: Record<string, string> = {
+  PASSIVE: "Passive",
+  SAFE_ACTIVE: "Safe Active",
+  STANDARD_ACTIVE: "Standard Active",
+};
+const PRESET_LABELS: Record<string, string> = {
+  PROFILE_DEFAULT: "Profile default",
+  WEB: "Web ports",
+  COMMON: "Common services",
+  TOP_1024: "Ports 1–1024",
+  CUSTOM: "Custom…",
+};
+
 export function stateBadge(state: string): string {
   if (state === "COMPLETED") return "ok";
   if (["FAILED", "TIMED_OUT", "DENIED", "EXPIRED"].includes(state)) return "bad";
@@ -20,17 +33,18 @@ export function Scans() {
   const isAdmin = me?.role === "ADMINISTRATOR";
   const [scans, setScans] = useState<Execution[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
+  const [presets, setPresets] = useState<Record<string, string>>({});
   const [stop, setStop] = useState<EmergencyStopStatus | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const [mode, setMode] = useState<"pick" | "type">("pick");
-  const [form, setForm] = useState({
-    target_id: "",
-    target_value: "",
-    profile: "PASSIVE",
-    rate_choice: "CONSERVATIVE",
-    attestation_text: "",
-  });
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [typed, setTyped] = useState("");
+  const [profile, setProfile] = useState("PASSIVE");
+  const [rate, setRate] = useState("CONSERVATIVE");
+  const [portPreset, setPortPreset] = useState("PROFILE_DEFAULT");
+  const [customPorts, setCustomPorts] = useState("");
+  const [attestation, setAttestation] = useState("");
 
   const load = useCallback(async () => {
     setScans(await api.get<Execution[]>("/api/scans").catch(() => []));
@@ -42,38 +56,59 @@ export function Scans() {
 
   useEffect(() => {
     void load();
+    void api
+      .get<{ presets: Record<string, string> }>("/api/scans/port-presets")
+      .then((r) => setPresets(r.presets))
+      .catch(() => undefined);
+  }, [load]);
+
+  useEffect(() => {
     const active = () => scans.some((s) => !TERMINAL.includes(s.state));
     const id = setInterval(() => active() && void load(), 4000);
     return () => clearInterval(id);
   }, [load, scans]);
 
   const targetName = (id: string) => targets.find((t) => t.id === id)?.value ?? id.slice(0, 8);
-  const isActiveProfile = form.profile !== "PASSIVE";
+  const isActive = profile !== "PASSIVE";
+
+  function togglePick(id: string) {
+    setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
 
   async function submitScan(e: FormEvent) {
     e.preventDefault();
     setError("");
-    const body: Record<string, unknown> = {
-      profile: form.profile,
-      rate_choice: form.rate_choice,
-    };
-    if (mode === "pick") {
-      if (!form.target_id) {
-        setError("Choose a target.");
-        return;
-      }
-      body.target_id = form.target_id;
-    } else {
-      if (!form.target_value.trim()) {
-        setError("Type a host, IP, or CIDR.");
-        return;
-      }
-      body.target_value = form.target_value.trim();
+    setNotice("");
+    const values = typed
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (pickedIds.length === 0 && values.length === 0) {
+      setError("Select at least one target, or type a host, IP, or CIDR.");
+      return;
     }
-    if (isActiveProfile) body.attestation_text = form.attestation_text;
+    const body: Record<string, unknown> = {
+      target_ids: pickedIds,
+      target_values: values,
+      profile,
+      rate_choice: rate,
+    };
+    if (isActive) {
+      body.attestation_text = attestation;
+      body.port_preset = portPreset;
+      if (portPreset === "CUSTOM") body.ports = customPorts;
+    }
     try {
-      await api.post("/api/scans", body);
-      setForm({ ...form, target_value: "", attestation_text: "" });
+      const r = await api.post<{ executions: Execution[] }>("/api/scans", body);
+      const n = r.executions.length;
+      setNotice(
+        isActive
+          ? `${n} active scan${n === 1 ? "" : "s"} submitted for administrator approval.`
+          : `${n} passive scan${n === 1 ? "" : "s"} queued.`,
+      );
+      setTyped("");
+      setPickedIds([]);
+      setAttestation("");
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not start the scan");
@@ -109,6 +144,7 @@ export function Scans() {
     <div>
       <h2>Scans</h2>
       {error && <p className="error">{error}</p>}
+      {notice && <p className="notice">{notice}</p>}
 
       {isAdmin && stop?.active && (
         <section className="card">
@@ -117,7 +153,7 @@ export function Scans() {
             <span className="muted">{stop.active.note}</span>
           </p>
           <button className="secondary" onClick={() => void clearStop(stop.active!.id)}>
-            Clear emergency stop
+            Clear Emergency Stop
           </button>
         </section>
       )}
@@ -125,93 +161,99 @@ export function Scans() {
       <section className="card">
         <h3>New Scan</h3>
         <p className="muted">
-          Defining a target does not queue anything. Choose one of your targets, or type a host,
-          IP, or network in CIDR notation. Active profiles need the typed attestation and a fresh
-          administrator approval.
+          Defining a target does not queue anything. Pick any of your targets and/or type
+          additional hosts, IPs, or networks (CIDR) — one scan runs per target. Active profiles
+          need the typed attestation and a fresh administrator approval.
         </p>
         <form onSubmit={submitScan}>
-          <div className="seg" role="group" aria-label="Target source">
-            <button
-              type="button"
-              className={mode === "pick" ? "on" : ""}
-              onClick={() => setMode("pick")}
-            >
-              Choose a target
-            </button>
-            <button
-              type="button"
-              className={mode === "type" ? "on" : ""}
-              onClick={() => setMode("type")}
-            >
-              Type host / IP / CIDR
-            </button>
+          <label>Select from your targets ({pickedIds.length} selected)</label>
+          <div className="chip-row">
+            {targets.filter((t) => t.is_active).length === 0 && (
+              <span className="muted" style={{ fontSize: "0.85rem" }}>
+                No defined targets yet.
+              </span>
+            )}
+            {targets
+              .filter((t) => t.is_active)
+              .map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className={`chip ${pickedIds.includes(t.id) ? "on" : ""}`}
+                  aria-pressed={pickedIds.includes(t.id)}
+                  onClick={() => togglePick(t.id)}
+                >
+                  {t.value}
+                </button>
+              ))}
           </div>
 
-          <div className="row" style={{ marginTop: "0.6rem" }}>
-            {mode === "pick" ? (
-              <div>
-                <label htmlFor="tgt">Target</label>
-                <select
-                  id="tgt"
-                  value={form.target_id}
-                  onChange={(e) => setForm({ ...form, target_id: e.target.value })}
-                >
-                  <option value="">Select…</option>
-                  {targets
-                    .filter((t) => t.is_active)
-                    .map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.value} ({t.kind})
-                      </option>
-                    ))}
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label htmlFor="tv">Host, IP, or CIDR</label>
-                <input
-                  id="tv"
-                  value={form.target_value}
-                  onChange={(e) => setForm({ ...form, target_value: e.target.value })}
-                  placeholder="10.10.5.20  ·  10.10.0.0/24  ·  host.lab.example.com"
-                />
-              </div>
-            )}
+          <label htmlFor="typed" style={{ marginTop: "0.7rem" }}>
+            …and/or type hosts, IPs, or CIDRs (one per line or comma-separated)
+          </label>
+          <textarea
+            id="typed"
+            rows={2}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="10.10.5.20&#10;10.10.0.0/24&#10;host.lab.example.com"
+          />
+
+          <div className="row" style={{ marginTop: "0.7rem" }}>
             <div>
               <label htmlFor="prof">Profile</label>
-              <select
-                id="prof"
-                value={form.profile}
-                onChange={(e) => setForm({ ...form, profile: e.target.value })}
-              >
-                <option value="PASSIVE">Passive</option>
-                <option value="SAFE_ACTIVE">Safe active</option>
-                <option value="STANDARD_ACTIVE">Standard active</option>
+              <select id="prof" value={profile} onChange={(e) => setProfile(e.target.value)}>
+                {Object.entries(PROFILE_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
               </select>
             </div>
-            {isActiveProfile && (
-              <div>
-                <label htmlFor="rate">Rate</label>
-                <select
-                  id="rate"
-                  value={form.rate_choice}
-                  onChange={(e) => setForm({ ...form, rate_choice: e.target.value })}
-                >
-                  <option value="CONSERVATIVE">Conservative</option>
-                  <option value="MODERATE">Moderate</option>
-                </select>
-              </div>
+            {isActive && (
+              <>
+                <div>
+                  <label htmlFor="rate">Rate</label>
+                  <select id="rate" value={rate} onChange={(e) => setRate(e.target.value)}>
+                    <option value="CONSERVATIVE">Conservative</option>
+                    <option value="MODERATE">Moderate</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="pp">Ports</label>
+                  <select id="pp" value={portPreset} onChange={(e) => setPortPreset(e.target.value)}>
+                    {["PROFILE_DEFAULT", "WEB", "COMMON", "TOP_1024", "CUSTOM"].map((k) => (
+                      <option key={k} value={k} title={presets[k] || ""}>
+                        {PRESET_LABELS[k]}
+                        {presets[k] ? ` — ${presets[k]}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
           </div>
 
-          {isActiveProfile && (
+          {isActive && portPreset === "CUSTOM" && (
+            <>
+              <label htmlFor="cp">Custom ports (e.g. 22,80,443,8000-8100)</label>
+              <input
+                id="cp"
+                value={customPorts}
+                onChange={(e) => setCustomPorts(e.target.value)}
+                placeholder="22,80,443,8000-8100"
+              />
+            </>
+          )}
+
+          {isActive && (
             <>
               <label htmlFor="att">Type exactly: “{ACTIVE_ATTESTATION}”</label>
               <textarea
                 id="att"
                 rows={3}
-                value={form.attestation_text}
-                onChange={(e) => setForm({ ...form, attestation_text: e.target.value })}
+                value={attestation}
+                onChange={(e) => setAttestation(e.target.value)}
               />
             </>
           )}
@@ -219,9 +261,9 @@ export function Scans() {
           <button
             type="submit"
             style={{ marginTop: "0.7rem" }}
-            disabled={isActiveProfile && form.attestation_text.trim() !== ACTIVE_ATTESTATION}
+            disabled={isActive && attestation.trim() !== ACTIVE_ATTESTATION}
           >
-            {isActiveProfile ? "Submit for Approval" : "Start Passive Scan"}
+            {isActive ? "Submit for Approval" : "Start Passive Scan"}
           </button>
         </form>
       </section>
@@ -256,7 +298,7 @@ export function Scans() {
                     <Link to={`/targets/${s.target_id}`}>{targetName(s.target_id)}</Link>
                   </td>
                   <td>
-                    {s.profile}
+                    {PROFILE_LABELS[s.profile] ?? s.profile}
                     {s.schedule_id ? " · scheduled" : ""}
                   </td>
                   <td>

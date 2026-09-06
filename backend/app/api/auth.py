@@ -100,12 +100,13 @@ def login(body: LoginRequest, request: Request, response: Response,
 
     if not ok or not user.is_active:
         AuditService.append(
-            db, actor=f"username:{body.username}", action="AUTH_FAILURE",
+            db, actor=f"user:{user.username if user else body.username}", action="AUTH_FAILURE",
             object_type="user", object_id=user.id if user else "",
-            payload={"ip": _client(request), "reason": "bad_credentials_or_disabled"},
+            payload={"ip": _client(request), "reason": "bad_credentials_or_disabled",
+                     "attempted_username": body.username},
         )
         db.commit()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Credentials")
 
     token, csrf = new_session_token(), new_csrf_token()
     db.add(SessionRecord(id=token, user_id=user.id, csrf_token=csrf))
@@ -120,10 +121,11 @@ def login(body: LoginRequest, request: Request, response: Response,
 
 @router.post("/logout", dependencies=[Depends(require_csrf)])
 def logout(response: Response, session: SessionRecord = Depends(get_current_session),
+           user: User = Depends(get_current_user),
            db: Session = Depends(get_db)) -> dict:
     session.revoked = True
     AuditService.append(
-        db, actor=f"user:{session.user_id}", action="AUTH_LOGOUT",
+        db, actor=f"user:{user.username}", action="AUTH_LOGOUT",
         object_type="session", object_id=session.id, payload={},
     )
     db.commit()

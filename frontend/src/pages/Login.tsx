@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { ApiError } from "../api";
 import { useAuth } from "../auth";
+import { PasswordInput } from "../components/PasswordInput";
 import { Raccoon } from "../components/Raccoon";
 
 export function Login() {
@@ -15,16 +16,16 @@ export function Login() {
     try {
       await login(username, password);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Login failed");
+      setError(err instanceof ApiError ? err.message : "Login Failed");
     }
   }
 
   return (
     <div className="center-page">
       <form className="card" onSubmit={submit}>
-        <div className="brand" style={{ justifyContent: "center", marginBottom: "0.5rem" }}>
-          <Raccoon size={40} />
-          <h1 style={{ fontSize: "1.4rem" }}>Trash Scan</h1>
+        <div className="hero-brand">
+          <h1>Trash Scan</h1>
+          <Raccoon size={38} />
         </div>
         <p className="muted" style={{ textAlign: "center", marginTop: 0 }}>
           Authorized Reconnaissance Dashboard
@@ -32,16 +33,11 @@ export function Login() {
         <label htmlFor="u">Username</label>
         <input id="u" value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="p">Password</label>
-        <input
-          id="p"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <PasswordInput id="p" value={password} onChange={setPassword} required
+                       autoComplete="current-password" />
         {error && <p className="error">{error}</p>}
         <button type="submit" style={{ marginTop: "1rem" }}>
-          Log in
+          Log In
         </button>
       </form>
     </div>

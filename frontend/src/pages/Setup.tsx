@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
+import { PasswordInput } from "../components/PasswordInput";
 import { Raccoon } from "../components/Raccoon";
 
 export function Setup() {
@@ -16,16 +17,16 @@ export function Setup() {
       await api.post("/api/auth/setup", { username, password });
       await refresh();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Setup failed");
+      setError(err instanceof ApiError ? err.message : "Setup Failed");
     }
   }
 
   return (
     <div className="center-page">
       <form className="card" onSubmit={submit}>
-        <div className="brand" style={{ justifyContent: "center", marginBottom: "0.5rem" }}>
-          <Raccoon size={40} />
+        <div className="hero-brand">
           <h1 style={{ fontSize: "1.3rem" }}>First-Run Setup</h1>
+          <Raccoon size={34} />
         </div>
         <p className="muted" style={{ textAlign: "center" }}>
           Create the initial administrator account.
@@ -33,17 +34,11 @@ export function Setup() {
         <label htmlFor="u">Username</label>
         <input id="u" value={username} onChange={(e) => setUsername(e.target.value)} required />
         <label htmlFor="p">Password (min 12 characters)</label>
-        <input
-          id="p"
-          type="password"
-          value={password}
-          minLength={12}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <PasswordInput id="p" value={password} onChange={setPassword} minLength={12} required
+                       autoComplete="new-password" />
         {error && <p className="error">{error}</p>}
         <button type="submit" style={{ marginTop: "1rem" }}>
-          Create administrator
+          Create Administrator
         </button>
       </form>
     </div>

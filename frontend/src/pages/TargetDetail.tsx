@@ -289,8 +289,8 @@ export function TargetDetail() {
                 value={active.profile}
                 onChange={(e) => setActive({ ...active, profile: e.target.value })}
               >
-                <option value="SAFE_ACTIVE">Safe active</option>
-                <option value="STANDARD_ACTIVE">Standard active</option>
+                <option value="SAFE_ACTIVE">Safe Active</option>
+                <option value="STANDARD_ACTIVE">Standard Active</option>
               </select>
             </div>
             <div>

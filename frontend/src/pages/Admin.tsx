@@ -1,5 +1,6 @@
 import { type SyntheticEvent, useEffect, useState } from "react";
 import { api, ApiError } from "../api";
+import { PasswordInput } from "../components/PasswordInput";
 
 interface Account {
   id: string;
@@ -139,13 +140,14 @@ export function Admin() {
             />
           </div>
           <div>
-            <label>Password (min 12)</label>
-            <input
-              type="password"
-              minLength={12}
+            <label htmlFor="np">Password (min 12)</label>
+            <PasswordInput
+              id="np"
               value={nu.password}
-              onChange={(e) => setNu({ ...nu, password: e.target.value })}
+              onChange={(v) => setNu({ ...nu, password: v })}
+              minLength={12}
               required
+              autoComplete="new-password"
             />
           </div>
           <div>

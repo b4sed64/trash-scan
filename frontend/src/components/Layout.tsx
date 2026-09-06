@@ -14,11 +14,11 @@ export function Layout({ children }: { children: ReactNode }) {
       </a>
       <aside className="sidebar">
         <div className="brand">
-          <Raccoon size={26} />
-          <div>
+          <div className="brand-text">
             <h1>Trash Scan</h1>
             <small>Authorized Recon</small>
           </div>
+          <Raccoon size={30} />
         </div>
 
         <Link to="/account" className="brand-account">

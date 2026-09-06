@@ -60,10 +60,11 @@ export function Approvals() {
                 : ""}
             </p>
             <p className="muted">
-              Rate: {String(a.requested_options?.rate_choice ?? "—")} · ports resolved at launch
+              Rate: {String(a.requested_options?.rate_choice ?? "—")} · Ports:{" "}
+              {String(a.requested_options?.ports ?? "profile default")}
             </p>
             <div className="row">
-              <button onClick={act(a.id, "approve")}>Approve (one run, 2h to start)</button>
+              <button onClick={act(a.id, "approve")}>Approve (One Run, 2h to Start)</button>
               <input
                 placeholder="denial reason"
                 value={reason[a.id] ?? ""}

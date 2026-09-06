@@ -104,8 +104,8 @@ export function Audit() {
           <div>
             <label htmlFor="ord">Order</label>
             <select id="ord" value={order} onChange={(e) => setOrder(e.target.value as "asc" | "desc")}>
-              <option value="desc">Newest first</option>
-              <option value="asc">Oldest first (a chain of events)</option>
+              <option value="desc">Newest First</option>
+              <option value="asc">Oldest First</option>
             </select>
           </div>
           {filtersActive && (

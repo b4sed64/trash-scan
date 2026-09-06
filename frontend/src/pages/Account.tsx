@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
+import { PasswordInput } from "../components/PasswordInput";
 
 export function Account() {
   const { me } = useAuth();
@@ -45,31 +46,14 @@ export function Account() {
         <h3>Change Password</h3>
         <form onSubmit={submit}>
           <label htmlFor="cur">Current password</label>
-          <input
-            id="cur"
-            type="password"
-            value={cur}
-            onChange={(e) => setCur(e.target.value)}
-            required
-          />
+          <PasswordInput id="cur" value={cur} onChange={setCur} required
+                         autoComplete="current-password" />
           <label htmlFor="next">New password (min 12 characters)</label>
-          <input
-            id="next"
-            type="password"
-            minLength={12}
-            value={next}
-            onChange={(e) => setNext(e.target.value)}
-            required
-          />
+          <PasswordInput id="next" value={next} onChange={setNext} minLength={12} required
+                         autoComplete="new-password" />
           <label htmlFor="confirm">Confirm new password</label>
-          <input
-            id="confirm"
-            type="password"
-            minLength={12}
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-            required
-          />
+          <PasswordInput id="confirm" value={confirm} onChange={setConfirm} minLength={12} required
+                         autoComplete="new-password" />
           {error && <p className="error">{error}</p>}
           {msg && <p className="notice">{msg}</p>}
           <button type="submit" style={{ marginTop: "0.8rem" }}>

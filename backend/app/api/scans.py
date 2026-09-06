@@ -21,7 +21,14 @@ from ..models import (
     Target,
     User,
 )
-from ..scan_profiles import RATE_CHOICES, profile_for, resolve_rate
+from ..scan_profiles import (
+    PORT_PRESETS,
+    RATE_CHOICES,
+    PortSpecError,
+    profile_for,
+    resolve_ports,
+    resolve_rate,
+)
 from ..services import AuditService, AuthorizationService, ScopeError, canonicalize_target
 from ..services.authorization_service import PermissionDenied, ROLE_ADMIN
 from ..services.execution_service import TERMINAL, ScanService
@@ -35,12 +42,17 @@ class CreateScan(BaseModel):
     profile: str = Field(default="PASSIVE", pattern=r"^(PASSIVE|SAFE_ACTIVE|STANDARD_ACTIVE)$")
     attestation_text: str | None = None
     rate_choice: str = Field(default="CONSERVATIVE", pattern=r"^(CONSERVATIVE|MODERATE)$")
+    # Port selection for active scans: a preset name and/or a custom spec.
+    port_preset: str | None = None
+    ports: str | None = Field(default=None, max_length=2000)
 
 
 class CreateScanFlexible(CreateScan):
-    # Exactly one of these identifies the target to scan.
+    # Any combination identifies one or more targets to scan.
     target_id: str | None = None
     target_value: str | None = Field(default=None, max_length=256)
+    target_ids: list[str] = Field(default_factory=list)
+    target_values: list[str] = Field(default_factory=list, max_length=50)
 
 
 class CancelScan(BaseModel):
@@ -134,12 +146,34 @@ def _resolve_scan_target(db: Session, user: User, target_id: str | None,
     return target
 
 
+@router.get("/api/scans/port-presets")
+def port_presets(_: User = Depends(get_current_user)) -> dict:
+    return {"presets": PORT_PRESETS}
+
+
 @router.post("/api/scans", status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_csrf)])
 def create_scan_flexible(body: CreateScanFlexible, user: User = Depends(get_current_user),
                          db: Session = Depends(get_db)) -> dict:
-    target = _resolve_scan_target(db, user, body.target_id, body.target_value)
-    return _launch_scan(db, user, target, body)
+    ids = [t for t in ([body.target_id] if body.target_id else []) + list(body.target_ids) if t]
+    values = [
+        v for v in ([body.target_value] if body.target_value else []) + list(body.target_values)
+        if v and v.strip()
+    ]
+    if not ids and not values:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "select at least one target, or type a host / IP / CIDR")
+
+    resolved: dict[str, Target] = {}
+    for tid in ids:
+        t = _resolve_scan_target(db, user, tid, None)
+        resolved[t.id] = t
+    for value in values:
+        t = _resolve_scan_target(db, user, None, value)
+        resolved[t.id] = t
+
+    executions = [_launch_scan(db, user, t, body) for t in resolved.values()]
+    return {"executions": executions}
 
 
 @router.post("/api/targets/{target_id}/scans", status_code=status.HTTP_201_CREATED,
@@ -190,8 +224,15 @@ def _launch_scan(db: Session, user: User, target: Target, body: CreateScan) -> d
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"target is outside approved active scope: {decision.reason}")
 
+    try:
+        ports = resolve_ports(body.port_preset, body.ports)
+    except PortSpecError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
     options = {
-        "ports": None,  # resolved from config at launch unless an admin overrides
+        # None -> the profile default port set from configuration.
+        "ports": ports,
+        "port_preset": (body.port_preset or "PROFILE_DEFAULT").upper(),
         "rate_choice": body.rate_choice,
         "rate_per_second": resolve_rate(body.rate_choice, RATE_CHOICES["CONSERVATIVE"]),
         "syn": profile.nmap_syn,

@@ -210,8 +210,8 @@ th { color: var(--text-dim); font-weight: 600; }
 /* login: the raccoon poking up out of a tipped-open bin, centred above the card */
 .login-raccoon {
   position: relative;
-  width: 160px;
-  height: 148px;
+  width: 170px;
+  height: 168px;
   margin: 0 auto 1rem;
 }
 .login-raccoon .lr-coon {
@@ -219,7 +219,7 @@ th { color: var(--text-dim); font-weight: 600; }
   left: 50%;
   top: 0;
   transform: translateX(-52%);
-  font-size: 84px;
+  font-size: 96px;
   line-height: 1;
   z-index: 1;
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
@@ -229,7 +229,7 @@ th { color: var(--text-dim); font-weight: 600; }
   left: 50%;
   bottom: 0;
   transform: translateX(-50%);
-  font-size: 116px;
+  font-size: 112px;
   line-height: 1;
   z-index: 2;
 }

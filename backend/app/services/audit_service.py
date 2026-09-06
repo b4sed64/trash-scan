@@ -10,12 +10,24 @@ import datetime as dt
 import hashlib
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from ..models import AuditEvent
 
 GENESIS_HASH = "0" * 64
+
+# A stable 64-bit key for the Postgres advisory lock that serializes audit
+# appends across the API, worker and beat processes (PRD §18 requires a single
+# monotonic sequence and a single hash chain).
+_AUDIT_LOCK_KEY = 0x7A5C_A0D1_7A5C_A0D1 - (1 << 63)
+
+
+def _serialize_appends(db: Session) -> None:
+    """Take a transaction-scoped lock so concurrent appenders cannot race on
+    ``seq`` or fork the hash chain. No-op on SQLite (tests are single-threaded)."""
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _AUDIT_LOCK_KEY})
 
 # Fields that must never appear in an audit payload (PRD 18).
 _FORBIDDEN_KEYS = {"password", "password_hash", "session", "session_token", "csrf_token", "secret"}
@@ -71,6 +83,7 @@ class AuditService:
         object_id: str = "",
         payload: dict | None = None,
     ) -> AuditEvent:
+        _serialize_appends(db)
         last = db.execute(
             select(AuditEvent).order_by(AuditEvent.seq.desc()).limit(1)
         ).scalar_one_or_none()

@@ -62,6 +62,11 @@ input, select, textarea {
   padding: 0.45rem 0.6rem;
   width: 100%;
 }
+textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+  line-height: 1.4;
+}
 
 label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; color: var(--text-dim); }
 
@@ -169,13 +174,18 @@ th { color: var(--text-dim); font-weight: 600; }
 /* sidebar: text block on the left, mark on the right, vertically centred */
 .brand {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: 0.6rem;
   margin: 0 0 1rem;
   color: var(--offwhite);
 }
-.brand .brand-text { min-width: 0; }
+.brand .brand-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .brand h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.02em; }
 .brand small {
   display: block;
@@ -184,20 +194,19 @@ th { color: var(--text-dim); font-weight: 600; }
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
-.brand .raccoon-emoji { position: relative; top: -1px; }
-
-/* centred hero mark (login / setup): text centred, mark to its right */
-.hero-brand {
-  position: relative;
-  text-align: center;
-  margin: 0 0 0.4rem;
+/* flex box centres the emoji glyph against the full height of the text block */
+.brand .raccoon-emoji {
+  display: flex;
+  align-items: center;
+  line-height: 1;
 }
-.hero-brand h1 { margin: 0; font-size: 1.4rem; }
-.hero-brand .raccoon-emoji {
-  position: absolute;
-  right: 0;
-  top: 44%;
-  transform: translateY(-50%);
+
+/* login: standalone mark, centred in the window above the card */
+.login-mark {
+  font-size: 56px;
+  line-height: 1;
+  text-align: center;
+  margin-bottom: 0.9rem;
 }
 
 /* ---- password field ---- */
@@ -413,6 +422,57 @@ th { color: var(--text-dim); font-weight: 600; }
   background: var(--forest);
   border-color: var(--forest-bright);
   color: #fff;
+}
+
+/* ---- multi-select dropdown ---- */
+.multiselect { position: relative; }
+.multiselect__button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: var(--charcoal);
+  border: 1px solid var(--border);
+  color: var(--offwhite);
+  text-align: left;
+}
+.multiselect__button:hover { background: var(--charcoal); border-color: var(--forest-bright); }
+.multiselect__panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  background: var(--charcoal-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.multiselect__empty { padding: 0.6rem 0.7rem; font-size: 0.85rem; }
+.multiselect__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--offwhite);
+  text-align: left;
+  font-size: 0.88rem;
+  padding: 0.5rem 0.7rem;
+}
+.multiselect__row:hover { background: var(--charcoal-sunk); }
+.multiselect__row.on { background: rgba(47, 107, 79, 0.18); }
+.multiselect__check {
+  width: 1rem;
+  flex-shrink: 0;
+  color: var(--forest-bright);
+  font-weight: 700;
 }
 
 /* ---- new scan form ---- */

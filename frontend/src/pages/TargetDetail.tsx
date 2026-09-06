@@ -240,7 +240,7 @@ export function TargetDetail() {
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <h3>Assets ({target.assets.length})</h3>
           <button onClick={() => void runPassive()} disabled={busy || !target.is_active}>
-            {busy ? "Queuing…" : "Run passive discovery"}
+            {busy ? "Queuing…" : "Run Passive Discovery"}
           </button>
         </div>
         <p className="muted">
@@ -316,7 +316,7 @@ export function TargetDetail() {
             style={{ marginTop: "0.6rem" }}
             disabled={active.attestation_text.trim() !== ACTIVE_ATTESTATION || !target.is_active}
           >
-            Submit for approval
+            Submit for Approval
           </button>
         </form>
       </section>
@@ -626,14 +626,14 @@ export function TargetDetail() {
               onChange={(e) => setSched({ ...sched, timezone: e.target.value })}
             />
           </div>
-          <button type="submit">Add passive schedule</button>
+          <button type="submit">Add Passive Schedule</button>
         </form>
       </section>
 
       <section className="card">
         <h3>Reports &amp; Exports</h3>
         <div className="row">
-          <button onClick={() => void makeReport("PDF")}>Generate PDF report</button>
+          <button onClick={() => void makeReport("PDF")}>Generate PDF Report</button>
           <button className="secondary" onClick={() => void makeReport("CSV_ZIP")}>
             Export CSV (.zip)
           </button>
@@ -748,7 +748,7 @@ export function TargetDetail() {
             onClick={call(() => api.post(`/api/targets/${id}/archive`))}
             disabled={!target.is_active}
           >
-            Archive target
+            Archive Target
           </button>
           <div style={{ marginTop: "1rem" }}>
             <label htmlFor="cv">
@@ -762,7 +762,7 @@ export function TargetDetail() {
               disabled={confirmValue !== target.value}
               onClick={() => void remove()}
             >
-              Delete target and results
+              Delete Target and Results
             </button>
           </div>
         </section>

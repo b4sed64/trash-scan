@@ -1,7 +1,8 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, EmergencyStopStatus, Execution, Target } from "../api";
 import { useAuth } from "../auth";
+import { MultiSelect, Option } from "../components/MultiSelect";
 
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED"];
 const ACTIVE_ATTESTATION =
@@ -13,13 +14,16 @@ const PROFILE_LABELS: Record<string, string> = {
   SAFE_ACTIVE: "Safe Active",
   STANDARD_ACTIVE: "Standard Active",
 };
-const PRESET_LABELS: Record<string, string> = {
-  PROFILE_DEFAULT: "Profile default",
-  WEB: "Web ports",
-  COMMON: "Common services",
+const BUILTIN_PRESET_LABELS: Record<string, string> = {
+  WEB: "Web Ports",
+  COMMON: "Common Services",
   TOP_1024: "Ports 1–1024",
-  CUSTOM: "Custom…",
 };
+
+interface PortPresets {
+  presets: Record<string, string>;
+  port_sets: { id: string; name: string; spec: string }[];
+}
 
 export function stateBadge(state: string): string {
   if (state === "COMPLETED") return "ok";
@@ -33,7 +37,7 @@ export function Scans() {
   const isAdmin = me?.role === "ADMINISTRATOR";
   const [scans, setScans] = useState<Execution[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
-  const [presets, setPresets] = useState<Record<string, string>>({});
+  const [portData, setPortData] = useState<PortPresets>({ presets: {}, port_sets: [] });
   const [stop, setStop] = useState<EmergencyStopStatus | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -42,7 +46,7 @@ export function Scans() {
   const [typed, setTyped] = useState("");
   const [profile, setProfile] = useState("PASSIVE");
   const [rate, setRate] = useState("CONSERVATIVE");
-  const [portPreset, setPortPreset] = useState("PROFILE_DEFAULT");
+  const [pickedPorts, setPickedPorts] = useState<string[]>([]);
   const [customPorts, setCustomPorts] = useState("");
   const [attestation, setAttestation] = useState("");
 
@@ -57,8 +61,8 @@ export function Scans() {
   useEffect(() => {
     void load();
     void api
-      .get<{ presets: Record<string, string> }>("/api/scans/port-presets")
-      .then((r) => setPresets(r.presets))
+      .get<PortPresets>("/api/scans/port-presets")
+      .then(setPortData)
       .catch(() => undefined);
   }, [load]);
 
@@ -71,8 +75,37 @@ export function Scans() {
   const targetName = (id: string) => targets.find((t) => t.id === id)?.value ?? id.slice(0, 8);
   const isActive = profile !== "PASSIVE";
 
-  function togglePick(id: string) {
-    setPickedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const targetOptions: Option[] = targets
+    .filter((t) => t.is_active)
+    .map((t) => ({ value: t.id, label: t.value, hint: t.kind }));
+
+  const portOptions: Option[] = useMemo(() => {
+    const opts: Option[] = [];
+    for (const key of ["WEB", "COMMON", "TOP_1024"]) {
+      if (portData.presets[key])
+        opts.push({ value: `preset:${key}`, label: BUILTIN_PRESET_LABELS[key], hint: portData.presets[key] });
+    }
+    for (const ps of portData.port_sets) {
+      opts.push({ value: `set:${ps.id}`, label: ps.name, hint: ps.spec });
+    }
+    return opts;
+  }, [portData]);
+
+  function specFor(value: string): string {
+    if (value.startsWith("preset:")) return portData.presets[value.slice(7)] ?? "";
+    if (value.startsWith("set:")) {
+      return portData.port_sets.find((p) => p.id === value.slice(4))?.spec ?? "";
+    }
+    return "";
+  }
+
+  function composePorts(): string {
+    const tokens = new Set<string>();
+    for (const v of pickedPorts) {
+      for (const t of specFor(v).split(",")) if (t.trim()) tokens.add(t.trim());
+    }
+    for (const t of customPorts.split(/[,\s]+/)) if (t.trim()) tokens.add(t.trim());
+    return [...tokens].join(",");
   }
 
   async function submitScan(e: FormEvent) {
@@ -95,8 +128,13 @@ export function Scans() {
     };
     if (isActive) {
       body.attestation_text = attestation;
-      body.port_preset = portPreset;
-      if (portPreset === "CUSTOM") body.ports = customPorts;
+      const composed = composePorts();
+      if (composed) {
+        body.port_preset = "CUSTOM";
+        body.ports = composed;
+      } else {
+        body.port_preset = "PROFILE_DEFAULT";
+      }
     }
     try {
       const r = await api.post<{ executions: Execution[] }>("/api/scans", body);
@@ -140,6 +178,8 @@ export function Scans() {
     await load();
   }
 
+  const composedPreview = isActive ? composePorts() : "";
+
   return (
     <div>
       <h2>Scans</h2>
@@ -166,26 +206,15 @@ export function Scans() {
           need the typed attestation and a fresh administrator approval.
         </p>
         <form onSubmit={submitScan}>
-          <label>Select from your targets ({pickedIds.length} selected)</label>
-          <div className="chip-row">
-            {targets.filter((t) => t.is_active).length === 0 && (
-              <span className="muted" style={{ fontSize: "0.85rem" }}>
-                No defined targets yet.
-              </span>
-            )}
-            {targets
-              .filter((t) => t.is_active)
-              .map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={`chip ${pickedIds.includes(t.id) ? "on" : ""}`}
-                  aria-pressed={pickedIds.includes(t.id)}
-                  onClick={() => togglePick(t.id)}
-                >
-                  {t.value}
-                </button>
-              ))}
+          <div className="row">
+            <MultiSelect
+              label={`Select from your targets (${pickedIds.length} selected)`}
+              options={targetOptions}
+              selected={pickedIds}
+              onChange={setPickedIds}
+              placeholder="Choose targets…"
+              emptyText="No defined targets yet."
+            />
           </div>
 
           <label htmlFor="typed" style={{ marginTop: "0.7rem" }}>
@@ -193,7 +222,7 @@ export function Scans() {
           </label>
           <textarea
             id="typed"
-            rows={2}
+            rows={5}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
             placeholder="10.10.5.20&#10;10.10.0.0/24&#10;host.lab.example.com"
@@ -211,39 +240,41 @@ export function Scans() {
               </select>
             </div>
             {isActive && (
-              <>
-                <div>
-                  <label htmlFor="rate">Rate</label>
-                  <select id="rate" value={rate} onChange={(e) => setRate(e.target.value)}>
-                    <option value="CONSERVATIVE">Conservative</option>
-                    <option value="MODERATE">Moderate</option>
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="pp">Ports</label>
-                  <select id="pp" value={portPreset} onChange={(e) => setPortPreset(e.target.value)}>
-                    {["PROFILE_DEFAULT", "WEB", "COMMON", "TOP_1024", "CUSTOM"].map((k) => (
-                      <option key={k} value={k} title={presets[k] || ""}>
-                        {PRESET_LABELS[k]}
-                        {presets[k] ? ` — ${presets[k]}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
+              <div>
+                <label htmlFor="rate">Rate</label>
+                <select id="rate" value={rate} onChange={(e) => setRate(e.target.value)}>
+                  <option value="CONSERVATIVE">Conservative</option>
+                  <option value="MODERATE">Moderate</option>
+                </select>
+              </div>
             )}
           </div>
 
-          {isActive && portPreset === "CUSTOM" && (
-            <>
-              <label htmlFor="cp">Custom ports (e.g. 22,80,443,8000-8100)</label>
+          {isActive && (
+            <div style={{ marginTop: "0.7rem" }}>
+              <div className="row">
+                <MultiSelect
+                  label={`Ports (${pickedPorts.length} set${pickedPorts.length === 1 ? "" : "s"} selected)`}
+                  options={portOptions}
+                  selected={pickedPorts}
+                  onChange={setPickedPorts}
+                  placeholder="Profile default"
+                  emptyText="No defined port sets."
+                />
+              </div>
+              <label htmlFor="cp">…and/or type ports (e.g. 22,80,443,8000-8100)</label>
               <input
                 id="cp"
                 value={customPorts}
                 onChange={(e) => setCustomPorts(e.target.value)}
                 placeholder="22,80,443,8000-8100"
               />
-            </>
+              <p className="muted" style={{ fontSize: "0.82rem" }}>
+                {composedPreview
+                  ? `Will scan: ${composedPreview}`
+                  : "Will use the profile's default port set."}
+              </p>
+            </div>
           )}
 
           {isActive && (
@@ -251,7 +282,7 @@ export function Scans() {
               <label htmlFor="att">Type exactly: “{ACTIVE_ATTESTATION}”</label>
               <textarea
                 id="att"
-                rows={3}
+                rows={5}
                 value={attestation}
                 onChange={(e) => setAttestation(e.target.value)}
               />

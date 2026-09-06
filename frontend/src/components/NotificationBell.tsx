@@ -77,7 +77,7 @@ export function NotificationBell() {
             </span>
             {unread > 0 && (
               <button className="secondary" onClick={() => void markAll()}>
-                Mark all read
+                Mark All Read
               </button>
             )}
           </header>

@@ -71,6 +71,19 @@ class PrivateCidr(Base):
     created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
 
 
+class PortSet(Base):
+    """A reusable, administrator-defined named set of ports for active scans."""
+
+    __tablename__ = "port_sets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    spec: Mapped[str] = mapped_column(String(2000), nullable=False)
+    note: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+
+
 class DenyRule(Base):
     __tablename__ = "deny_rules"
 

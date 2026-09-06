@@ -92,12 +92,12 @@ export function Dashboard() {
         <div className="stat">
           <div className="label">Open findings</div>
           <div className="value">{totalOpen}</div>
-          <div className="sub">observed in the latest scans</div>
+          <div className="sub">Observed in the Latest Scans</div>
         </div>
         <div className={`stat ${needsAttention > 0 ? "alert" : ""}`}>
           <div className="label">Needs attention</div>
           <div className="value">{needsAttention}</div>
-          <div className="sub">critical + high severity</div>
+          <div className="sub">Critical + High Severity</div>
         </div>
         <div className="stat">
           <div className="label">Targets in scope</div>
@@ -112,7 +112,7 @@ export function Dashboard() {
             <div className="label">Pending approvals</div>
             <div className="value">{pendingApprovals}</div>
             <div className="sub">
-              <Link to="/approvals">review queue</Link>
+              <Link to="/approvals">Review Queue</Link>
             </div>
           </div>
         )}
@@ -163,7 +163,7 @@ export function Dashboard() {
               checked={hideNotObserved}
               onChange={(e) => setHideNotObserved(e.target.checked)}
             />
-            hide "not observed"
+            Hide &ldquo;Not Observed&rdquo;
           </label>
         </div>
         <p className="notice">
@@ -267,7 +267,7 @@ export function Dashboard() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h3>Reports &amp; Exports</h3>
           <button onClick={() => void exportAllCsv()} disabled={busy}>
-            {busy ? "Preparing…" : "Export all visible data (CSV .zip)"}
+            {busy ? "Preparing…" : "Export All Visible Data (CSV .zip)"}
           </button>
         </div>
         <p className="muted">

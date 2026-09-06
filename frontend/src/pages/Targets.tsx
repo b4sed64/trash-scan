@@ -97,7 +97,7 @@ export function Targets() {
 
           {error && <p className="error">{error}</p>}
           <button type="submit" style={{ marginTop: "0.8rem" }}>
-            Add target
+            Add Target
           </button>
         </form>
       )}

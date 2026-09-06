@@ -57,7 +57,7 @@ export function Account() {
           {error && <p className="error">{error}</p>}
           {msg && <p className="notice">{msg}</p>}
           <button type="submit" style={{ marginTop: "0.8rem" }}>
-            Change password
+            Change Password
           </button>
         </form>
       </section>

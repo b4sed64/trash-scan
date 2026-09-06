@@ -116,7 +116,7 @@ export function Audit() {
                 setQ("");
               }}
             >
-              Clear filters
+              Clear Filters
             </button>
           )}
         </div>

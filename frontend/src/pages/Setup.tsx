@@ -22,12 +22,14 @@ export function Setup() {
   }
 
   return (
-    <div className="center-page">
+    <div className="center-page" style={{ flexDirection: "column" }}>
+      <div className="login-mark" aria-hidden="true">
+        <Raccoon size={52} />
+      </div>
       <form className="card" onSubmit={submit}>
-        <div className="hero-brand">
-          <h1 style={{ fontSize: "1.3rem" }}>First-Run Setup</h1>
-          <Raccoon size={34} />
-        </div>
+        <h1 style={{ fontSize: "1.3rem", textAlign: "center", margin: "0 0 0.2rem" }}>
+          First-Run Setup
+        </h1>
         <p className="muted" style={{ textAlign: "center" }}>
           Create the initial administrator account.
         </p>

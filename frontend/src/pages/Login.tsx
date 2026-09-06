@@ -21,12 +21,12 @@ export function Login() {
   }
 
   return (
-    <div className="center-page">
+    <div className="center-page" style={{ flexDirection: "column" }}>
+      <div className="login-mark" aria-hidden="true">
+        <Raccoon size={56} />
+      </div>
       <form className="card" onSubmit={submit}>
-        <div className="hero-brand">
-          <h1>Trash Scan</h1>
-          <Raccoon size={38} />
-        </div>
+        <h1 style={{ textAlign: "center", margin: "0 0 0.1rem" }}>Trash Scan</h1>
         <p className="muted" style={{ textAlign: "center", marginTop: 0 }}>
           Authorized Reconnaissance Dashboard
         </p>

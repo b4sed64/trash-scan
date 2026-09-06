@@ -147,8 +147,14 @@ def _resolve_scan_target(db: Session, user: User, target_id: str | None,
 
 
 @router.get("/api/scans/port-presets")
-def port_presets(_: User = Depends(get_current_user)) -> dict:
-    return {"presets": PORT_PRESETS}
+def port_presets(_: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    from ..models import PortSet
+
+    defined = [
+        {"id": p.id, "name": p.name, "spec": p.spec}
+        for p in db.execute(select(PortSet).order_by(PortSet.name)).scalars()
+    ]
+    return {"presets": PORT_PRESETS, "port_sets": defined}
 
 
 @router.post("/api/scans", status_code=status.HTTP_201_CREATED,

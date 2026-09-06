@@ -9,7 +9,8 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import DenyRule, PrivateCidr, SessionRecord, User
+from ..models import DenyRule, PortSet, PrivateCidr, SessionRecord, User
+from ..scan_profiles import PortSpecError, parse_port_spec
 from ..security import hash_password
 from ..services import AuditService
 from ..services.scope_service import (
@@ -263,6 +264,61 @@ def remove_deny_rule(rule_id: str, admin: User = Depends(require_admin),
     AuditService.append(
         db, actor=f"user:{admin.username}", action="DENY_RULE_REMOVED",
         object_type="deny_rule", object_id=rule_id, payload=payload,
+    )
+    db.commit()
+    return {"ok": True}
+
+
+# --- port sets (reusable named port selections for active scans) --------
+class PortSetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9 _./-]+$")
+    spec: str = Field(min_length=1, max_length=2000)
+    note: str = Field(default="", max_length=256)
+
+
+@router.get("/port-sets")
+def list_port_sets(db: Session = Depends(get_db)) -> list[dict]:
+    return [
+        {"id": p.id, "name": p.name, "spec": p.spec, "note": p.note, "created_at": p.created_at}
+        for p in db.execute(select(PortSet).order_by(PortSet.name)).scalars()
+    ]
+
+
+@router.post("/port-sets", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_csrf)])
+def add_port_set(body: PortSetCreate, admin: User = Depends(require_admin),
+                 db: Session = Depends(get_db)) -> dict:
+    try:
+        canonical = parse_port_spec(body.spec)
+    except PortSpecError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    if not canonical:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "port spec is empty")
+    if db.execute(select(PortSet).where(PortSet.name == body.name)).scalar_one_or_none():
+        raise HTTPException(status.HTTP_409_CONFLICT, "a port set with that name already exists")
+    row = PortSet(name=body.name, spec=canonical, note=body.note, created_by_id=admin.id)
+    db.add(row)
+    db.flush()
+    AuditService.append(
+        db, actor=f"user:{admin.username}", action="PORT_SET_ADDED",
+        object_type="port_set", object_id=row.id, payload={"name": row.name, "spec": canonical},
+    )
+    db.commit()
+    return {"id": row.id, "name": row.name, "spec": row.spec, "note": row.note,
+            "created_at": row.created_at}
+
+
+@router.delete("/port-sets/{port_set_id}", dependencies=[Depends(require_csrf)])
+def remove_port_set(port_set_id: str, admin: User = Depends(require_admin),
+                    db: Session = Depends(get_db)) -> dict:
+    row = db.get(PortSet, port_set_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    name = row.name
+    db.delete(row)
+    AuditService.append(
+        db, actor=f"user:{admin.username}", action="PORT_SET_REMOVED",
+        object_type="port_set", object_id=port_set_id, payload={"name": name},
     )
     db.commit()
     return {"ok": True}

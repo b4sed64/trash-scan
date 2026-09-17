@@ -23,6 +23,8 @@ from .base import (
     StageInput,
     StageOutput,
 )
+from .dnsx import dns_posture_findings
+from .httpx import tls_findings
 
 FAKE_VERSION = "fake/2.0.0"
 
@@ -89,6 +91,11 @@ class FakeDnsxAdapter:
                 DiscoveredObservation(kind="DNS_RECORD", key="NS", value="ns1.lab.internal",
                                       source="dnsx", asset_value=host)
             )
+        if inp.target_kind == "DOMAIN":
+            # No synthetic SPF/DMARC/CAA records are emitted above, so this
+            # deterministically surfaces the "missing record" findings offline —
+            # the same rule logic the real adapter uses on real DNS answers.
+            out.findings = dns_posture_findings(out.observations, inp.target_value)
         return out
 
 
@@ -154,6 +161,26 @@ class FakeHttpxAdapter:
                 kind="HTTP_HEADER", key="Server", value="nginx/1.25.0", source="httpx",
                 asset_value=probe.split(":")[0],
             ))
+            host = probe.split(":")[0]
+            tls = {
+                "port": "443", "tls_version": "tls12", "cipher": "TLS_AES_128_GCM_SHA256",
+                "subject_cn": host, "issuer_cn": "Lab Internal CA",
+                "not_after": "2099-01-01T00:00:00Z", "serial": f"fake-{host}",
+                "expired": False, "self_signed": False, "mismatched": False,
+            }
+            if _octet(host, "tls-self-signed") % 3 == 0:
+                tls["self_signed"] = True
+                tls["issuer_cn"] = host
+            if _octet(host, "tls-weak-version") % 5 == 0:
+                tls["tls_version"] = "tls10"
+            if _octet(host, "tls-expiring") % 7 == 0:
+                tls["not_after"] = "2026-01-01T00:00:00Z"  # exercised only near that date
+            out.observations.append(DiscoveredObservation(
+                kind="TLS", key="certificate",
+                value=f"subject={tls['subject_cn']}; issuer={tls['issuer_cn']}; not_after={tls['not_after']}",
+                source="httpx", asset_value=host,
+            ))
+            out.findings.extend(tls_findings(tls, host))
         return out
 
 

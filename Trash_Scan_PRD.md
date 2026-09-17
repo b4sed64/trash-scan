@@ -743,6 +743,53 @@ Validate the uncertain platform behaviors before building the full interface:
 
 **Exit condition:** Every MVP acceptance criterion passes in the target Windows/Docker lab.
 
+### Implementation status (living — see `docs/POST_MVP.md` for the full running log)
+
+Phases 1–5 above are implemented and tested; see `docs/ACCEPTANCE.md` for the
+criterion-by-criterion mapping. **Phase 0 was never executed** — it is inherently a
+hands-on validation exercise on real Docker/lab hardware, not something a build
+agent can complete ahead of time. As a direct result, SYN scan and OS detection stay
+disabled (`TRASHSCAN_ALLOW_RAW_PACKET=false`) and Argon2id parameters remain the
+conservative code defaults rather than hardware-tuned values. See
+`docs/PRD_EVALUATION.md` for the detail.
+
+### Phase 6 — Enrichment scanning (post-MVP)
+
+Deepens the existing tool bundle's already-approved-but-partially-unused
+responsibilities, plus two governance decisions carried over from §12 and §29.
+
+- **TLS/certificate posture** — Delivered. §12.4 already lists "TLS metadata" as an
+  approved httpx responsibility; `-tls-grab` was being captured but only stored as an
+  inert observation. It now also produces severity-ranked findings: expired
+  certificate, expiring within 30 days, self-signed, hostname mismatch, and
+  deprecated protocol (SSLv3/TLS 1.0/TLS 1.1). No new tool, no PRD amendment needed.
+- **Passive DNS-record enrichment (SPF/DMARC/CAA)** — Delivered. §12.3 already lists
+  TXT and CAA among dnsx's approved record types. The already-collected raw records
+  are now interpreted into findings: missing/permissive SPF, missing DMARC or a
+  `p=none` (monitor-only) policy, and missing CAA. Domain targets only; classified
+  PASSIVE like the rest of dnsx's output, so no new approval step. No new tool, no
+  PRD amendment needed.
+- **Broader crawling (ProjectDiscovery katana)** — Planned, not yet built. Unlike the
+  two above, this is a genuinely new tool outside the §12 bundle (currently Nmap,
+  Subfinder, dnsx, httpx, restricted Nuclei) and needs the same governance treatment
+  as the others before it ships: a pinned, checksum-verified binary; an approved
+  responsibilities/restrictions subsection (bounded crawl depth/page count/time
+  budget, same-host only, no form submission, classified ACTIVE); and a new
+  `worker` stage wired into the Safe/Standard profiles between httpx and Nuclei.
+- **External OSINT lookups (crt.sh Certificate Transparency, WHOIS/RDAP domain
+  registration)** — Planned, not yet built. This lifts the "broader OSINT providers"
+  line already sitting in §29's deferred backlog, and is a different category of
+  capability than the pinned-CLI-tool bundle: it means the application makes live
+  outbound calls to third-party public services at scan time (crt.sh, a WHOIS/RDAP
+  registry), sending the target domain to them. The plan is to ship it **off by
+  default**, gated by an explicit settings flag, with the outbound dependency
+  documented plainly in `docs/CONFIGURATION.md` — the same off-by-default pattern
+  already used for `TRASHSCAN_ALLOW_RAW_PACKET`.
+
+**Exit condition:** TLS posture and DNS-record enrichment findings appear on a
+completed scan and survive baseline comparison; katana and the external OSINT
+lookups either ship under the governance above or remain explicitly deferred.
+
 ## 26. Vibe-coding guardrails
 
 Because the project will be built with substantial AI coding assistance:

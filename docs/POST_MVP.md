@@ -97,12 +97,55 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
   fields have a show/hide toggle; every page carries a faint raccoon / raccoon-in-a-bin
   watermark (turned 45° CCW).
 
+## Bug fix — active scans against a public-boundary target always failed
+
+`worker/runner.py`'s pre-launch scope re-check re-derived "in scope" addresses with
+its own private-CIDR-only filter (`_within_scope`), duplicating part of
+`scope_service.evaluate_active_scope` incompletely. Any target approved solely via a
+**public boundary** (an `is_public` target with attestation, no matching private
+CIDR — the normal way to authorize scanning your own public domain) always resolved
+to zero in-scope addresses and failed at `SCAN_SCOPE_RECHECK_FAILED`, even though the
+authoritative scope decision said `allowed: true`. Private-CIDR lab targets never hit
+this, which is why it shipped unnoticed. Fixed by deriving `in_scope_ips` from
+`decision.allowed` itself (which already vets every candidate address against both
+private CIDRs and public boundaries) instead of re-filtering by private CIDR alone;
+the redundant, incomplete `_within_scope` helper is removed. Regression test:
+`test_active_workflow.py::test_active_scan_launches_against_a_public_boundary_target`.
+
+## Enrichment scanning (Phase 6, partial)
+
+Two additions that interpret data the approved tool bundle was already collecting
+but only stored as inert observations. Both are pure functions shared by the real
+and fake adapters (`backend/app/adapters/httpx.py::tls_findings`,
+`backend/app/adapters/dnsx.py::dns_posture_findings`), so the fake pipeline exercises
+the exact same rule logic offline. Neither needed a new tool, a migration, or a PRD
+tool-bundle amendment — see `Trash_Scan_PRD.md` §25 "Phase 6" for the full writeup,
+including the two pieces (broader crawling via katana; external OSINT lookups via
+crt.sh/WHOIS) that are planned but **not yet built**, because they do need new-tool
+or new-external-dependency governance first.
+
+- **TLS/certificate posture** (source tool `httpx`) — `tls-cert-expired` (HIGH),
+  `tls-cert-expiring-soon` (MEDIUM, within 30 days), `tls-self-signed` (LOW),
+  `tls-hostname-mismatch` (MEDIUM), `tls-deprecated-protocol` (HIGH for SSLv3,
+  MEDIUM for TLS 1.0/1.1). Derived from the `-tls-grab` data httpx was already
+  capturing.
+- **Passive DNS-record posture** (source tool `dnsx`, domain targets only) —
+  `dns-spf-missing` / `dns-spf-permissive` (`+all`), `dns-dmarc-missing` /
+  `dns-dmarc-policy-none` (`p=none`), `dns-caa-missing`. dnsx now also resolves
+  `_dmarc.<domain>` so the DMARC record is actually queried. Runs for both passive
+  and active scans of a domain target, same as the rest of dnsx's output.
+- `services/comparison.py`'s `_STAGE_FOR_TOOL` map gained `httpx` and `dnsx` entries
+  so these findings participate correctly in NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED
+  baseline comparison instead of only ever showing as a "did not complete"
+  limitation.
+
 ## Tests
 
-The suite is now **120 tests**. Post-MVP additions:
+The suite is now **133 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
-stop; passive scans wait for Start too).
+stop; passive scans wait for Start too), `test_enrichment.py` (TLS-posture and
+SPF/DMARC/CAA finding rules, end to end through both scan classifications).
 
 ## Concurrency fix
 

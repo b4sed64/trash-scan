@@ -3,9 +3,15 @@
 Wordlist and brute-force modes are never enabled (no ``-w``/``-d`` dictionary
 input). Rate limits and bounded retries always apply. A DNS response is never
 converted into active scope by this adapter.
+
+TXT and CAA records are already an approved dnsx responsibility. ``dns_posture_findings``
+interprets the ones that carry an email/certificate-authority policy (SPF, DMARC,
+CAA) into actionable findings instead of leaving them as inert raw-record
+observations — passive, no approval needed, since it is pure DNS lookup.
 """
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import os
@@ -16,6 +22,7 @@ from .base import (
     CLASSIFICATION_PASSIVE,
     STAGE_DNSX,
     DiscoveredAsset,
+    DiscoveredFinding,
     DiscoveredObservation,
     StageInput,
     StageOutput,
@@ -24,6 +31,82 @@ from .base import (
 BIN = os.getenv("TRASHSCAN_DNSX_BIN", "dnsx")
 
 _RECORD_FLAGS = ["-a", "-aaaa", "-cname", "-ns", "-txt", "-mx", "-soa", "-caa"]
+_DMARC_PREFIX = "_dmarc."
+
+
+def _rule_hash(rule_id: str, version: str = "v1") -> str:
+    return hashlib.sha256(f"trashscan-internal-rule:{rule_id}:{version}".encode()).hexdigest()
+
+
+def _mk(rule_id: str, severity: str, name: str, description: str, asset: str,
+        evidence_key: str, evidence_summary: str, evidence: dict) -> DiscoveredFinding:
+    return DiscoveredFinding(
+        rule_id=rule_id, template_hash=_rule_hash(rule_id), severity=severity, name=name,
+        description=description, asset_value=asset, matched_at=f"dns://{asset}",
+        matcher_name="dns-record", port=None, protocol="tcp",
+        evidence_key=evidence_key, evidence_summary=evidence_summary[:400], evidence=evidence,
+    )
+
+
+def dns_posture_findings(observations: list[DiscoveredObservation], domain: str) -> list[DiscoveredFinding]:
+    """Interpret the SPF/DMARC/CAA posture of ``domain`` from already-collected
+    TXT/CAA observations. Domain-only — SPF/DMARC/CAA are DNS-mail/CA concepts
+    that don't apply to a bare IP or CIDR target."""
+    txt_apex = [o.value for o in observations
+                if o.kind == "DNS_RECORD" and o.key == "TXT" and o.asset_value == domain]
+    txt_dmarc = [o.value for o in observations
+                 if o.kind == "DNS_RECORD" and o.key == "TXT" and o.asset_value == _DMARC_PREFIX + domain]
+    caa_apex = [o.value for o in observations
+                if o.kind == "DNS_RECORD" and o.key == "CAA" and o.asset_value == domain]
+
+    findings: list[DiscoveredFinding] = []
+
+    spf = next((t for t in txt_apex if t.lower().startswith("v=spf1")), None)
+    if spf is None:
+        findings.append(_mk(
+            "dns-spf-missing", "MEDIUM", "Missing SPF Record",
+            "No SPF TXT record was found; mail sent as this domain cannot be authenticated by SPF.",
+            domain, evidence_key="spf-missing",
+            evidence_summary=f"{domain} has no v=spf1 TXT record",
+            evidence={"txt_records": txt_apex},
+        ))
+    elif "+all" in spf.lower():
+        findings.append(_mk(
+            "dns-spf-permissive", "MEDIUM", "Permissive SPF Record (+all)",
+            "The SPF record ends in '+all', which authorizes any host to send mail as this domain.",
+            domain, evidence_key="spf-permissive",
+            evidence_summary=f"{domain} SPF record: {spf}",
+            evidence={"spf": spf},
+        ))
+
+    dmarc = next((t for t in txt_dmarc if t.lower().startswith("v=dmarc1")), None)
+    if dmarc is None:
+        findings.append(_mk(
+            "dns-dmarc-missing", "MEDIUM", "Missing DMARC Record",
+            "No DMARC TXT record was found at _dmarc.<domain>; spoofed mail is not policed.",
+            domain, evidence_key="dmarc-missing",
+            evidence_summary=f"_dmarc.{domain} has no v=DMARC1 TXT record",
+            evidence={"txt_records": txt_dmarc},
+        ))
+    elif "p=none" in dmarc.lower():
+        findings.append(_mk(
+            "dns-dmarc-policy-none", "LOW", "DMARC Policy Set To Monitor Only (p=none)",
+            "The DMARC policy is 'none', so failing messages are reported but not rejected/quarantined.",
+            domain, evidence_key="dmarc-policy-none",
+            evidence_summary=f"_dmarc.{domain} DMARC record: {dmarc}",
+            evidence={"dmarc": dmarc},
+        ))
+
+    if not caa_apex:
+        findings.append(_mk(
+            "dns-caa-missing", "LOW", "No CAA Record (Any CA May Issue Certificates)",
+            "No CAA record restricts which certificate authorities may issue for this domain.",
+            domain, evidence_key="caa-missing",
+            evidence_summary=f"{domain} has no CAA record",
+            evidence={},
+        ))
+
+    return findings
 
 
 class DnsxAdapter:
@@ -40,7 +123,9 @@ class DnsxAdapter:
         hostnames = sorted({h.lower().rstrip(".") for h in inp.hosts if _is_hostname(h)})
         ips = sorted({h for h in inp.hosts if _is_ip(h)})
         if inp.target_kind == "DOMAIN":
-            hostnames = sorted(set(hostnames) | {inp.target_value})
+            # Also resolve the DMARC subdomain so dns_posture_findings can see it;
+            # SPF/CAA live on the apex record already being queried below.
+            hostnames = sorted(set(hostnames) | {inp.target_value, _DMARC_PREFIX + inp.target_value})
 
         if not hostnames and not ips:
             out.note = "no hostnames or IPs to resolve"
@@ -86,6 +171,8 @@ class DnsxAdapter:
         assets, observations = _parse(_read_lines(outfile, res.stdout))
         out.assets = assets
         out.observations = observations
+        if inp.target_kind == "DOMAIN":
+            out.findings = dns_posture_findings(observations, inp.target_value)
         out.ok = res.returncode == 0 or bool(assets or observations)
         return out
 

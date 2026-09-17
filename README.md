@@ -144,6 +144,11 @@ rule id, protocol/port, evidence key) — never from volatile data like timestam
 classifies every finding against the most recent **compatible** prior scan of the same
 target as `NEW` / `STILL_OBSERVED` / `CHANGED` / `NOT_OBSERVED`.
 
+Findings aren't Nuclei-only: httpx's TLS/certificate metadata is interpreted into posture
+findings (expired/expiring certificate, self-signed, hostname mismatch, deprecated
+protocol), and dnsx's TXT/CAA records are interpreted into SPF/DMARC/CAA posture findings
+for domain targets — both using data those tools were already collecting.
+
 ### Tamper-evident audit (`audit_service.py`)
 
 `AuditService.append` writes one row per security-relevant event, each carrying the SHA-256
@@ -295,15 +300,15 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**120 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**133 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
 state machine and idempotency, one-scan-many-targets grouping, manual start / pause / stop,
 scheduling, the active-scan approval workflow (expired approval, replay, scope re-check,
-runtime timeout, emergency stop), tool-output parsers, finding fingerprints and baseline
-comparison, CSV formula neutralization + PDF generation, retention, the maintenance
-workflow, port-spec validation, and the fake adapters.
+runtime timeout, emergency stop), tool-output parsers, TLS-posture and SPF/DMARC/CAA finding
+rules, finding fingerprints and baseline comparison, CSV formula neutralization + PDF
+generation, retention, the maintenance workflow, port-spec validation, and the fake adapters.
 
 ## Everyday operations
 

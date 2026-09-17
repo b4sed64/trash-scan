@@ -209,7 +209,18 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   - `CHANGED` — in both, but severity or evidence changed.
   - `NOT_OBSERVED` — in the baseline, not this run. **This never means "resolved."** If the
     owning stage was incomplete or failed this run, the finding is reported as a
-    *limitation* instead of `NOT_OBSERVED`.
+    *limitation* instead of `NOT_OBSERVED`. `_STAGE_FOR_TOOL` maps a finding's
+    `source_tool` to the stage that must have completed cleanly to establish this —
+    `nuclei`, `httpx`, and `dnsx` all participate.
+- **Findings are not Nuclei-only.** `httpx.py::tls_findings` and
+  `dnsx.py::dns_posture_findings` are pure functions that turn data those tools were
+  already collecting into severity-ranked findings, the same shape as a Nuclei
+  match (stable `rule_id`, a synthesized `template_hash` standing in for a template
+  content hash, `evidence_key`/`evidence_summary`). httpx supplies TLS/certificate
+  posture (expired, expiring soon, self-signed, hostname mismatch, deprecated
+  protocol); dnsx supplies SPF/DMARC/CAA posture for domain targets. Both functions
+  are imported by the fake adapters too, so offline runs and the test suite exercise
+  the identical rule logic real scans use.
 
 ---
 

@@ -59,14 +59,6 @@ def _result_dir(execution_id: str) -> str:
     return path
 
 
-def _within_scope(ip: str, private_cidrs: list[str]) -> bool:
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return any(addr in ipaddress.ip_network(c, strict=False) for c in private_cidrs)
-
-
 def _guard_factory(execution_id: str):
     """Poll cancellation and the runtime deadline (~1/s)."""
     def check() -> bool:
@@ -132,8 +124,12 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             elif target_kind == "CIDR":
                 net = ipaddress.ip_network(target_value, strict=False)
                 literal_ips = [str(h) for h in list(net.hosts())[:1024]] or [str(net.network_address)]
+            # `decision.allowed` already means every one of these addresses cleared
+            # scope_service.evaluate_active_scope — via an approved private CIDR OR
+            # an approved public boundary. Re-filtering here by private CIDR alone
+            # would silently drop a legitimately scoped public-boundary target.
             candidate_ips = sorted(set(decision.resolved_addresses) | set(literal_ips))
-            in_scope_ips = [ip for ip in candidate_ips if _within_scope(ip, private_cidrs)]
+            in_scope_ips = candidate_ips if decision.allowed else []
 
             if not decision.allowed or not in_scope_ips:
                 ScanService.transition(

@@ -117,6 +117,32 @@ def test_scope_recheck_blocks_launch_when_domain_leaves_scope(db, lab):
     assert db.query(Service).count() == 0
 
 
+def test_active_scan_launches_against_a_public_boundary_target(db):
+    """A target approved only via a public boundary (no private CIDR at all)
+    must still be allowed to launch — regression test for a bug where the
+    pre-launch re-check filtered candidate IPs by private CIDR only and so
+    always rejected a legitimately scoped public target."""
+    admin = User(username="pub_adm", role="ADMINISTRATOR",
+                password_hash=hash_password("x" * 12), is_active=True)
+    scanner = User(username="pub_scn", role="SCANNER",
+                   password_hash=hash_password("x" * 12), is_active=True)
+    pub_t = Target(kind="DOMAIN", value="shop.example.com", is_public=True,
+                   attestation_checkbox=True, attestation_text="authorized")
+    db.add_all([admin, scanner, pub_t])
+    db.flush()
+    db.commit()
+
+    ex_id, ap_id = _request_active(db, pub_t.id, scanner.id, profile="SAFE_ACTIVE")
+    _approve(db, ap_id, admin.id)
+    set_resolver(lambda _domain: ["203.0.113.80"])
+    try:
+        assert runner.execute(ex_id) == "COMPLETED"
+    finally:
+        set_resolver(None)
+    db.expire_all()
+    assert db.get(ScanExecution, ex_id).state == "COMPLETED"
+
+
 def test_runtime_cap_times_out_running_scan(db, lab):
     ex_id, ap_id = _request_active(db, lab["ip"], lab["scanner"])
     _approve(db, ap_id, lab["admin"])

@@ -170,7 +170,7 @@ class HttpxAdapter:
             "-location", "-tls-grab", "-response-time",
             "-timeout", "10", "-retries", "1",
             "-rate-limit", rps,
-            "-max-response-size", str(int(settings.max_response_bytes)),
+            "-response-size-to-read", str(int(settings.max_response_bytes)),
         ]
         if settings.httpx_follow_redirects:
             argv += ["-follow-redirects", "-max-redirects", str(int(settings.httpx_max_redirects))]

@@ -390,6 +390,11 @@ def _host_block(db: Session, ex: ScanExecution) -> dict:
     assets = db.execute(
         select(Asset).where(Asset.target_id == ex.target_id).order_by(Asset.kind, Asset.value)
     ).scalars().all()
+    asset_value_by_id = {a.id: a.value for a in assets}
+    observations = db.execute(
+        select(Observation).where(Observation.execution_id == ex.id)
+        .order_by(Observation.kind, Observation.key)
+    ).scalars().all()
     return {
         "execution_id": ex.id,
         "target": {"id": ex.target_id, "value": tgt.value if tgt else ex.target_id,
@@ -411,6 +416,11 @@ def _host_block(db: Session, ex: ScanExecution) -> dict:
               "evidence_summary": f.evidence_summary} for f in findings],
             key=lambda d: (-severity_rank(d["severity"]), d["rule_id"]),
         ),
+        "observations": [
+            {"kind": o.kind, "key": o.key, "value": o.value, "source_tool": o.source_tool,
+             "asset_value": asset_value_by_id.get(o.asset_id)}
+            for o in observations
+        ],
     }
 
 

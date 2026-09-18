@@ -180,7 +180,15 @@ export interface ScanHostBlock {
   started_at: string | null;
   finished_at: string | null;
   error: string | null;
-  stages: { stage: string; tool: string; ok: boolean; incomplete: boolean; note: string }[] | null;
+  stages: {
+    stage: string;
+    tool: string;
+    ok: boolean;
+    incomplete: boolean;
+    duration_ms: number;
+    stderr_excerpt: string;
+    note: string;
+  }[] | null;
   tool_versions: Record<string, string> | null;
   assets: { kind: string; value: string; source: string; in_scope: boolean; approved: boolean }[];
   services: { port: number; protocol: string; state: string; product: string; version: string }[];
@@ -193,6 +201,13 @@ export interface ScanHostBlock {
     port: number | null;
     status: string;
     evidence_summary: string;
+  }[];
+  observations: {
+    kind: string;
+    key: string;
+    value: string;
+    source_tool: string;
+    asset_value: string | null;
   }[];
 }
 

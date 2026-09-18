@@ -93,6 +93,32 @@ def test_active_multi_target_one_approval_then_start(env):
         sc.__exit__(None, None, None)
 
 
+def test_scan_detail_surfaces_observations_per_host(env):
+    r = _p(env["admin"], "/api/scans", {
+        "target_ids": [env["t1"]], "profile": "SAFE_ACTIVE",
+        "attestation_text": ACTIVE_SCAN_ATTESTATION,
+    })
+    scan_id = r.json()["scan_id"]
+    approval = env["admin"].get("/api/approvals?include_decided=false").json()[0]
+    _p(env["admin"], f"/api/approvals/{approval['id']}/approve")
+    assert _p(env["admin"], f"/api/scans/{scan_id}/start").status_code == 200
+
+    detail = env["admin"].get(f"/api/scans/{scan_id}").json()
+    host = detail["hosts"][0]
+    assert host["state"] == "COMPLETED"
+    obs = host["observations"]
+    assert obs, "expected at least one observation on a completed active scan"
+    sources = {o["source_tool"] for o in obs}
+    # httpx's TLS grab and katana's crawl both land here, not just Nuclei findings
+    assert "httpx" in sources
+    assert "katana" in sources
+    assert any(o["kind"] == "TECH" and o["key"] == "endpoint" for o in obs)
+    # each stage's raw failure/success detail (stderr, note) rides along on "stages"
+    stage_names = {s["stage"] for s in host["stages"]}
+    assert {"dnsx", "nmap", "httpx", "katana", "nuclei"} <= stage_names
+    assert all("stderr_excerpt" in s and "note" in s for s in host["stages"])
+
+
 def test_stop_cancels_the_whole_group(env):
     # an active scan waits in AWAITING_APPROVAL; stopping it cancels every execution
     r = _p(env["admin"], "/api/scans", {

@@ -84,8 +84,20 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 - **Scans → Scan History** lists scan groups with compact **Start** / **Pause** / **Stop**
   controls (icon buttons) and a **Review** link to the **scan detail** page (`/scans/:id`),
   which has dashboard-style severity tiles, a findings-by-severity bar, and a per-host
-  breakdown (state, stages, findings, services, assets). Each host block is a collapsible
-  card. A not-yet-started passive scan shows as *READY*.
+  breakdown (state, stages, findings, services, assets, observations). Each host block is
+  a collapsible card. A not-yet-started passive scan shows as *READY*.
+- **Scan detail → per-host diagnostics.** The Stages table now shows, per stage, its
+  status, duration, and — for anything that failed or ran incomplete — the tool's own
+  note or the first line of its stderr (full text on hover). A host with any failed stage
+  is flagged right on its collapsed card summary ("N stages failed"), so a silent tool
+  failure (a bad CLI flag, a permissions error, a missing binary) is visible without
+  digging through the database. A collapsible Observations table surfaces everything a
+  stage recorded that isn't a finding, service, or asset — dnsx's raw DNS records,
+  httpx's TLS/tech-detection data, katana's crawled endpoints, OSINT's WHOIS/CT-log
+  results — scoped to that one execution (`GET /api/scans/{id}` now includes
+  `observations` per host, backed by `Observation.execution_id`, alongside the
+  `stages` array's existing `stderr_excerpt` and `note`, which the UI simply wasn't
+  rendering before).
 - **Approvals** — one row per scan; multi-target scans show every target and are approved
   once. Approving no longer runs the scan (except scheduled occurrences); the requester
   presses Start.
@@ -97,7 +109,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
   fields have a show/hide toggle; every page carries a faint raccoon / raccoon-in-a-bin
   watermark (turned 45° CCW).
 
-## Bug fix — active scans against a public-boundary target always failed
+## Bug fixes
+
+### Active scans against a public-boundary target always failed
 
 `worker/runner.py`'s pre-launch scope re-check re-derived "in scope" addresses with
 its own private-CIDR-only filter (`_within_scope`), duplicating part of
@@ -111,6 +125,46 @@ this, which is why it shipped unnoticed. Fixed by deriving `in_scope_ips` from
 private CIDRs and public boundaries) instead of re-filtering by private CIDR alone;
 the redundant, incomplete `_within_scope` helper is removed. Regression test:
 `test_active_workflow.py::test_active_scan_launches_against_a_public_boundary_target`.
+
+### httpx and Nuclei silently failed on every real active scan
+
+Two independent, pre-existing bugs, both invisible in `SCANNER_MODE=fake` (the test
+suite never exercises a real tool subprocess) and both masked by the scan still
+reaching `COMPLETED` — a scan's overall state doesn't reflect whether every stage
+inside it actually succeeded.
+
+1. **A poisoned `$HOME`.** Every scanner subprocess runs through
+   `adapters/_exec.py::run_tool` with a deliberately minimal environment (no leaked
+   app secrets) that hardcoded `HOME=/tmp`. The Dockerfile's build-time Nuclei
+   template validation (`RUN HOME=/tmp nuclei -validate ...`) runs as root before
+   `USER appuser` is set, so it created `/tmp/.config/nuclei` as a root-owned,
+   mode-700 directory baked into the image. At runtime the non-root `appuser`
+   launched every real tool with that same `HOME=/tmp`, so Nuclei and katana (which
+   both need to read/write a config directory under `$HOME`, katana even just to
+   parse its flags) hit permission denied. nmap and dnsx don't touch `$HOME`, which
+   is why they kept working and the failure went unnoticed. Fixed: `run_tool` now
+   uses `HOME=/app` (already `chown`'d to `appuser`, never touched by a root build
+   step); the build step also removes `/tmp/.config` afterward so the image never
+   ships the poisoned directory at all.
+2. **A flag that doesn't exist.** `adapters/httpx.py` passed `-max-response-size` —
+   that's a **katana** flag, not an httpx one. httpx-pd exited immediately
+   (`flag provided but not defined`, exit code 2) before making a single request,
+   regardless of the `$HOME` fix. Replaced with httpx-pd's real flag,
+   `-response-size-to-read`. The other four adapters' flags were audited against
+   their real `-h` output while fixing this; no other mismatches found.
+
+Both were verified by invoking the real pinned binaries inside the rebuilt image
+with the exact sanitized environment `run_tool` constructs, not just by unit test —
+`SCANNER_MODE=fake` can't catch either class of bug by construction.
+
+### The UI didn't show a stage's own failure detail
+
+`GET /api/scans/{id}` already returned each stage's `stderr_excerpt` and `note` (the
+two bugs above were originally diagnosed by querying the database directly), but the
+scan detail page only ever rendered `"{stage}{ok ? '' : ' ✗'}"` — a stage failing was
+visible, *why* it failed was not, and a tool's non-finding output (raw DNS records,
+TLS/tech-detection data, crawled endpoints, WHOIS/CT-log results) had nowhere to
+show at all on that page. See "Scan detail → per-host diagnostics" above.
 
 ## Enrichment scanning (Phase 6 — complete)
 
@@ -173,11 +227,12 @@ shipped off by default, and one new pinned tool for broader crawling. See
 
 ## Tests
 
-The suite is now **150 tests**. Post-MVP additions:
+The suite is now **151 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
-stop; passive scans wait for Start too), `test_enrichment.py` (TLS-posture and
-SPF/DMARC/CAA finding rules, end to end through both scan classifications),
+stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
+observations and each stage's `stderr_excerpt`/`note`), `test_enrichment.py` (TLS-posture
+and SPF/DMARC/CAA finding rules, end to end through both scan classifications),
 `test_osint.py` (crt.sh/RDAP parsing, the off-by-default gate, and the injected-fetcher
 adapter path — fully offline), `test_katana.py` (endpoint parsing against katana's
 real JSONL shape, profile wiring, and end-to-end through the fake pipeline).

@@ -44,7 +44,7 @@ network and **track how it changes** over time.
 | **Scans** | One scan can cover any mix of chosen targets and typed hosts/IPs/CIDRs. Every scan is **created idle** and a person presses **Start**; **Pause** returns a just-started scan to the queue, **Stop** cancels it. Three profiles: `PASSIVE` (discovery only), `SAFE_ACTIVE`, `STANDARD_ACTIVE`. |
 | **Approval workflow** | Active scans require the exact ethical-use attestation text *and* a fresh administrator approval. One approval covers the whole scan (all its targets), authorizes exactly one run, and expires if it is not started within two hours. |
 | **Findings** | Tool output is normalized into assets, services and findings. Each finding gets a **stable fingerprint** so the same issue is recognised across runs and classified against a compatible baseline: `NEW`, `STILL_OBSERVED`, `CHANGED`, `NOT_OBSERVED`. "Not observed" never means "fixed". |
-| **Per-host review** | A scan detail page shows dashboard-style severity tiles and a collapsible per-host breakdown (state, stages, findings, services, assets). |
+| **Per-host review** | A scan detail page shows dashboard-style severity tiles and a collapsible per-host breakdown (state, stages, findings, services, assets, observations). Each stage shows its own status, duration, and — if it failed — the tool's note or stderr, so a bad flag or a permissions error is visible without querying the database. |
 | **Reports & exports** | Per-target PDF (rendered server-side) and CSV `.zip` exports. CSV cells that could be read as spreadsheet formulas are neutralised. Every export is recorded in the audit log. |
 | **Tamper-evident audit** | Every security-relevant event is written to an append-only, SHA-256 **hash-chained** log. Anyone can re-verify the whole chain from the Logs page. |
 | **Scheduling** | Recurring passive scans, or recurring active scans where each occurrence still needs its own approval. A missed occurrence is recorded as expired, never silently run later. |
@@ -309,7 +309,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**150 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**151 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution

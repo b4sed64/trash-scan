@@ -186,12 +186,18 @@ export function ScanDetail() {
         const attn = h.findings.filter(
           (f) => (f.severity === "CRITICAL" || f.severity === "HIGH") && f.status !== "NOT_OBSERVED",
         ).length;
+        const failedStages = (h.stages ?? []).filter((st) => !st.ok);
         return (
         <details className="card host-card" key={h.execution_id} open={scan.hosts.length <= 3}>
           <summary>
             <span style={{ fontWeight: 600 }}>{h.target.value}</span>
             <span className="muted" style={{ fontSize: "0.8rem" }}>({h.target.kind})</span>
             <span className={`badge ${stateBadge(h.state)} status-dot`}>{stateLabel(h.state)}</span>
+            {failedStages.length > 0 && (
+              <span className="badge bad" title={failedStages.map((st) => st.stage).join(", ")}>
+                {failedStages.length} stage{failedStages.length === 1 ? "" : "s"} failed
+              </span>
+            )}
             <span className="muted" style={{ fontSize: "0.82rem", marginLeft: "auto" }}>
               {h.findings.length} finding{h.findings.length === 1 ? "" : "s"}
               {attn > 0 ? ` · ${attn} need attention` : ""}
@@ -204,12 +210,39 @@ export function ScanDetail() {
           {h.error && <p className="error">{h.error}</p>}
 
           {(h.stages ?? []).length > 0 && (
-            <p className="muted" style={{ fontSize: "0.82rem" }}>
-              Stages:{" "}
-              {(h.stages ?? [])
-                .map((st) => `${st.stage}${st.ok ? "" : " ✗"}${st.incomplete ? " (incomplete)" : ""}`)
-                .join(", ")}
-            </p>
+            <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Stage</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Detail</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(h.stages ?? []).map((st) => (
+                    <tr key={st.stage}>
+                      <td>{st.stage}</td>
+                      <td>
+                        <span className={`badge ${st.ok ? "ok" : "bad"} status-dot`}>
+                          {st.ok ? "ok" : "failed"}
+                        </span>
+                        {st.incomplete && <span className="badge warn"> incomplete</span>}
+                      </td>
+                      <td className="muted">{(st.duration_ms / 1000).toFixed(1)}s</td>
+                      <td
+                        className={st.ok ? "muted" : "error"}
+                        style={{ fontSize: "0.82rem", maxWidth: 420 }}
+                        title={st.stderr_excerpt || undefined}
+                      >
+                        {st.note || (st.ok ? "—" : (st.stderr_excerpt.split("\n")[0] || "no output captured"))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
 
           <h4>Findings ({h.findings.length})</h4>
@@ -314,6 +347,38 @@ export function ScanDetail() {
                 </table>
               </div>
             </>
+          )}
+
+          {h.observations.length > 0 && (
+            <details style={{ marginTop: "0.8rem" }}>
+              <summary style={{ cursor: "pointer" }}>
+                Observations ({h.observations.length})
+              </summary>
+              <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Kind</th>
+                      <th>Key</th>
+                      <th>Value</th>
+                      <th>Asset</th>
+                      <th>Tool</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {h.observations.map((o, i) => (
+                      <tr key={`${o.kind}-${o.key}-${i}`}>
+                        <td>{o.kind}</td>
+                        <td>{o.key}</td>
+                        <td style={{ wordBreak: "break-all" }}>{o.value}</td>
+                        <td className="muted">{o.asset_value || "—"}</td>
+                        <td className="muted">{o.source_tool}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           )}
           </div>
         </details>

@@ -75,7 +75,12 @@ def run_tool(
             stderr=subprocess.PIPE,
             cwd=cwd,
             start_new_session=True,
-            env={"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "HOME": "/tmp"},
+            # HOME must be a directory the runtime user (appuser) actually owns.
+            # /tmp is world-writable but a stray root-owned /tmp/.config (e.g. from
+            # a tool's own build-time cache) would silently break any tool that
+            # keeps a config/cache dir under $HOME — /app is chown'd to appuser
+            # in the image and never touched by a build step running as root.
+            env={"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"), "HOME": "/app"},
         )
     except FileNotFoundError as exc:
         raise ToolNotFound(f"executable not found: {argv[0]}") from exc

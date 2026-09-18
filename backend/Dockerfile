@@ -77,7 +77,8 @@ COPY . .
 # Validate the immutable Nuclei template allowlist and its content-hash manifest
 # at build time; a bad template fails the build (PRD §12.5 / §12.7).
 RUN HOME=/tmp nuclei -validate -duc -t templates/nuclei \
-    && python -c "from app.adapters.nuclei import verify_template_set; import sys; ok,_,r=verify_template_set(__import__('pathlib').Path('templates/nuclei')); sys.exit(0 if ok else ('manifest mismatch: '+r))"
+    && python -c "from app.adapters.nuclei import verify_template_set; import sys; ok,_,r=verify_template_set(__import__('pathlib').Path('templates/nuclei')); sys.exit(0 if ok else ('manifest mismatch: '+r))" \
+    && rm -rf /tmp/.config
 
 RUN mkdir -p /app/artifacts && chown -R appuser:appuser /app
 USER appuser

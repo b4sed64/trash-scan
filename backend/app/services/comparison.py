@@ -25,7 +25,7 @@ CHANGED = "CHANGED"
 NOT_OBSERVED = "NOT_OBSERVED"
 
 # Which stage owns which source tool's findings.
-_STAGE_FOR_TOOL = {"nuclei": "nuclei", "httpx": "httpx", "dnsx": "dnsx"}
+_STAGE_FOR_TOOL = {"nuclei": "nuclei", "httpx": "httpx", "dnsx": "dnsx", "osint": "osint"}
 
 
 def find_baseline(db: Session, execution: ScanExecution) -> ScanExecution | None:

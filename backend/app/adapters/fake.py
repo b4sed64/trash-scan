@@ -6,6 +6,7 @@ lifecycle can be exercised without any network traffic.
 """
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 
 from .base import (
@@ -15,6 +16,7 @@ from .base import (
     STAGE_HTTPX,
     STAGE_NMAP,
     STAGE_NUCLEI,
+    STAGE_OSINT,
     STAGE_SUBFINDER,
     DiscoveredAsset,
     DiscoveredFinding,
@@ -25,6 +27,7 @@ from .base import (
 )
 from .dnsx import dns_posture_findings
 from .httpx import tls_findings
+from .osint import registration_expiry_finding
 
 FAKE_VERSION = "fake/2.0.0"
 
@@ -231,6 +234,51 @@ class FakeNucleiAdapter:
                     evidence_key=f"{rule_id}|word|{ev}", evidence_summary=f"{name} at http://{probe}/",
                     evidence={"extracted": [ev]},
                 ))
+        return out
+
+
+class FakeOsintAdapter:
+    stage = STAGE_OSINT
+    classification = CLASSIFICATION_PASSIVE
+
+    def tool_version(self) -> str:
+        return FAKE_VERSION
+
+    def run(self, inp: StageInput) -> StageOutput:
+        out = StageOutput(stage=self.stage, ok=True, tool="osint", tool_version=FAKE_VERSION,
+                          args=["-fake", "crt.sh", "rdap.org"])
+        if inp.target_kind != "DOMAIN":
+            out.note = "external OSINT lookups only apply to domain targets"
+            return out
+        # Deterministic stand-in for a live crt.sh/RDAP lookup. Fake mode never
+        # touches the network regardless of TRASHSCAN_ENABLE_EXTERNAL_OSINT, so
+        # this always runs — the same reason every other fake adapter ignores the
+        # flags that gate its real counterpart's capabilities.
+        domain = inp.target_value
+        out.assets.append(DiscoveredAsset(kind="HOSTNAME", value=f"legacy.{domain}", source="crt.sh"))
+        out.observations.append(DiscoveredObservation(
+            kind="OSINT", key="ct-log-subdomains", value="1", source="crt.sh", asset_value=domain,
+        ))
+        days_offset = _octet(domain, "whois-expiry") % 60 - 10  # -10..49 days: varies by target
+        expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=days_offset))
+        rdap = {
+            "registrar": "Fake Registrar, Inc.",
+            "created": "2015-01-01T00:00:00Z",
+            "expires": expires.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "nameservers": ["ns1.lab.internal", "ns2.lab.internal"],
+        }
+        for key in ("registrar", "created", "expires"):
+            out.observations.append(DiscoveredObservation(
+                kind="OSINT", key=f"whois-{key}", value=str(rdap[key]),
+                source="rdap", asset_value=domain,
+            ))
+        out.observations.append(DiscoveredObservation(
+            kind="OSINT", key="whois-nameservers", value=", ".join(rdap["nameservers"]),
+            source="rdap", asset_value=domain,
+        ))
+        finding = registration_expiry_finding(rdap, domain)
+        if finding:
+            out.findings.append(finding)
         return out
 
 

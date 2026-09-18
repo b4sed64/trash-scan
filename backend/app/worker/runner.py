@@ -15,6 +15,7 @@ from ..adapters.base import (
     STAGE_HTTPX,
     STAGE_NMAP,
     STAGE_NUCLEI,
+    STAGE_OSINT,
     STAGE_SUBFINDER,
 )
 from ..config import get_settings
@@ -184,8 +185,8 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             incomplete = True
             break
         adapter = get_adapter(stage_name)
-        if stage_name == STAGE_SUBFINDER:
-            hosts = []
+        if stage_name in (STAGE_SUBFINDER, STAGE_OSINT):
+            hosts = []  # both operate on inp.target_value directly, not a host list
         elif stage_name == STAGE_DNSX:
             hosts = list(discovered_hosts)
         elif stage_name == STAGE_NMAP:

@@ -11,6 +11,7 @@ from .base import (
     STAGE_HTTPX,
     STAGE_NMAP,
     STAGE_NUCLEI,
+    STAGE_OSINT,
     STAGE_SUBFINDER,
     ScannerAdapter,
 )
@@ -20,11 +21,13 @@ from .fake import (
     FakeHttpxAdapter,
     FakeNmapAdapter,
     FakeNucleiAdapter,
+    FakeOsintAdapter,
     FakeSubfinderAdapter,
 )
 from .httpx import HttpxAdapter
 from .nmap import NmapAdapter
 from .nuclei import NucleiAdapter
+from .osint import OsintAdapter
 from .subfinder import SubfinderAdapter
 
 _REAL = {
@@ -33,6 +36,7 @@ _REAL = {
     STAGE_NMAP: NmapAdapter,
     STAGE_HTTPX: HttpxAdapter,
     STAGE_NUCLEI: NucleiAdapter,
+    STAGE_OSINT: OsintAdapter,
 }
 _FAKE = {
     STAGE_SUBFINDER: FakeSubfinderAdapter,
@@ -40,6 +44,7 @@ _FAKE = {
     STAGE_NMAP: FakeNmapAdapter,
     STAGE_HTTPX: FakeHttpxAdapter,
     STAGE_NUCLEI: FakeNucleiAdapter,
+    STAGE_OSINT: FakeOsintAdapter,
 }
 
 
@@ -53,4 +58,4 @@ def get_adapter(stage: str) -> ScannerAdapter:
 
 
 def passive_stages() -> list[str]:
-    return [STAGE_SUBFINDER, STAGE_DNSX]
+    return [STAGE_SUBFINDER, STAGE_OSINT, STAGE_DNSX]

@@ -777,18 +777,23 @@ responsibilities, plus two governance decisions carried over from §12 and §29.
   budget, same-host only, no form submission, classified ACTIVE); and a new
   `worker` stage wired into the Safe/Standard profiles between httpx and Nuclei.
 - **External OSINT lookups (crt.sh Certificate Transparency, WHOIS/RDAP domain
-  registration)** — Planned, not yet built. This lifts the "broader OSINT providers"
-  line already sitting in §29's deferred backlog, and is a different category of
-  capability than the pinned-CLI-tool bundle: it means the application makes live
-  outbound calls to third-party public services at scan time (crt.sh, a WHOIS/RDAP
-  registry), sending the target domain to them. The plan is to ship it **off by
-  default**, gated by an explicit settings flag, with the outbound dependency
-  documented plainly in `docs/CONFIGURATION.md` — the same off-by-default pattern
-  already used for `TRASHSCAN_ALLOW_RAW_PACKET`.
+  registration)** — Delivered, off by default. This lifts the "broader OSINT
+  providers" line that was sitting in §29's deferred backlog. Unlike the rest of
+  the tool bundle it is not a pinned CLI binary: the application itself makes a
+  live outbound call to crt.sh and to RDAP at scan time, sending the target
+  domain to each. Gated by `TRASHSCAN_ENABLE_EXTERNAL_OSINT` (default `false`,
+  same off-by-default pattern as `TRASHSCAN_ALLOW_RAW_PACKET`); the outbound
+  dependency is documented plainly in `docs/CONFIGURATION.md`. When enabled, for
+  a domain target: crt.sh subdomains become new (unapproved) discovered assets,
+  same as Subfinder's; RDAP registrar/creation/expiry/nameservers become
+  observations, and an expiring-or-expired registration becomes a finding
+  (`osint-domain-registration-expiring-soon` / `-expired`). Domain targets only;
+  classified PASSIVE — it never contacts the target itself.
 
-**Exit condition:** TLS posture and DNS-record enrichment findings appear on a
-completed scan and survive baseline comparison; katana and the external OSINT
-lookups either ship under the governance above or remain explicitly deferred.
+**Exit condition:** TLS posture, DNS-record enrichment, and external OSINT findings
+appear on a completed scan and survive baseline comparison — done for all three;
+katana remains the one piece needing a §12 tool-bundle amendment before it can
+ship under that same governance, or stay explicitly deferred.
 
 ## 26. Vibe-coding guardrails
 
@@ -868,7 +873,11 @@ Tests must use systems owned by the team inside the authorized lab.
 - External notifications.
 - SSO, MFA, and multi-team tenancy.
 - Automated public-target ownership verification and authorization-document uploads.
-- UDP scanning, screenshots, authenticated checks, and broader OSINT providers.
+- UDP scanning, screenshots, and authenticated checks.
+- ~~Broader OSINT providers~~ — partially delivered post-MVP: crt.sh Certificate
+  Transparency and WHOIS/RDAP domain registration lookups (§25 Phase 6), off by
+  default (`TRASHSCAN_ENABLE_EXTERNAL_OSINT`). Still deferred: any provider beyond
+  those two, and OWASP Amass (below).
 - OWASP Amass.
 - Administrator-authored safe templates with review workflow.
 - Signed external audit checkpoints and SIEM integration.

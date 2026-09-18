@@ -107,7 +107,7 @@ each stage's argv is assembled from product-defined options only.
 
 | Profile | Class | Stages | Notes |
 |---|---|---|---|
-| `PASSIVE` | passive | `subfinder` → `dnsx` | Public OSINT + DNS resolution. No approval. `subfinder` runs only for DOMAIN targets. |
+| `PASSIVE` | passive | `subfinder` → `osint` → `dnsx` | Public OSINT + DNS resolution. No approval. `subfinder` runs only for DOMAIN targets; `osint` (crt.sh/RDAP) is a no-op unless `TRASHSCAN_ENABLE_EXTERNAL_OSINT=true`. Positioned before `dnsx` so any subdomains it discovers still get resolved. |
 | `SAFE_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `nuclei` | Nmap **TCP-connect**, service metadata, HTTP inspection, low-impact reviewed Nuclei templates. |
 | `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `nuclei` | Broader port set, service/version detection. SYN scan + OS detection **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
 
@@ -211,16 +211,17 @@ stages. It stays in force until an admin clears it; only one can be active at a 
     owning stage was incomplete or failed this run, the finding is reported as a
     *limitation* instead of `NOT_OBSERVED`. `_STAGE_FOR_TOOL` maps a finding's
     `source_tool` to the stage that must have completed cleanly to establish this —
-    `nuclei`, `httpx`, and `dnsx` all participate.
-- **Findings are not Nuclei-only.** `httpx.py::tls_findings` and
-  `dnsx.py::dns_posture_findings` are pure functions that turn data those tools were
-  already collecting into severity-ranked findings, the same shape as a Nuclei
-  match (stable `rule_id`, a synthesized `template_hash` standing in for a template
-  content hash, `evidence_key`/`evidence_summary`). httpx supplies TLS/certificate
-  posture (expired, expiring soon, self-signed, hostname mismatch, deprecated
-  protocol); dnsx supplies SPF/DMARC/CAA posture for domain targets. Both functions
-  are imported by the fake adapters too, so offline runs and the test suite exercise
-  the identical rule logic real scans use.
+    `nuclei`, `httpx`, `dnsx`, and `osint` all participate.
+- **Findings are not Nuclei-only.** `httpx.py::tls_findings`, `dnsx.py::dns_posture_findings`,
+  and `osint.py::registration_expiry_finding` are pure functions that turn data those
+  stages were already collecting into severity-ranked findings, the same shape as a
+  Nuclei match (stable `rule_id`, a synthesized `template_hash` standing in for a
+  template content hash, `evidence_key`/`evidence_summary`). httpx supplies
+  TLS/certificate posture (expired, expiring soon, self-signed, hostname mismatch,
+  deprecated protocol); dnsx supplies SPF/DMARC/CAA posture for domain targets;
+  osint supplies domain-registration-expiry (when enabled). All three functions are
+  imported by the fake adapters too, so offline runs and the test suite exercise the
+  identical rule logic real scans use.
 
 ---
 
@@ -257,6 +258,12 @@ against the publisher's `*_checksums.txt` **at build time**. httpx is installed 
 package. The Nuclei template set under `backend/templates/nuclei` is an immutable allowlist
 with a content-hash manifest validated during the build (`verify_template_set`). Every tool
 runs with update checks disabled — **nothing is fetched at runtime.**
+
+One adapter, `osint.py`, is not a pinned CLI binary at all: it is the application making
+its own outbound HTTPS calls to crt.sh and RDAP at scan time, gated off by default by
+`TRASHSCAN_ENABLE_EXTERNAL_OSINT` (see `docs/CONFIGURATION.md`). Both calls go through
+an injectable fetcher (`set_fetcher`, mirroring `scope_db.set_resolver`) so tests never
+touch the network regardless of the flag.
 
 `SCANNER_MODE=fake` produces stable, offline results and is what the test suite and
 `scripts/demo_seed.sh` use.

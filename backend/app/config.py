@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # Phase 0 spike proves the minimum Docker capability (PRD §19.1 / §28).
     allow_raw_packet: bool = False
 
+    # External OSINT lookups (crt.sh Certificate Transparency, WHOIS/RDAP) send
+    # the target domain to a third-party public service at scan time — a
+    # different trust posture than the pinned CLI tool bundle. Off by default
+    # (PRD §29 "broader OSINT providers", deferred until explicitly enabled).
+    enable_external_osint: bool = False
+
     # Active-profile port sets (administrator-defined, product-bounded) --------
     safe_active_ports: str = "22,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443"
     standard_active_ports: str = (

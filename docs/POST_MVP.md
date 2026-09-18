@@ -112,40 +112,55 @@ private CIDRs and public boundaries) instead of re-filtering by private CIDR alo
 the redundant, incomplete `_within_scope` helper is removed. Regression test:
 `test_active_workflow.py::test_active_scan_launches_against_a_public_boundary_target`.
 
-## Enrichment scanning (Phase 6, partial)
+## Enrichment scanning (Phase 6)
 
-Two additions that interpret data the approved tool bundle was already collecting
-but only stored as inert observations. Both are pure functions shared by the real
-and fake adapters (`backend/app/adapters/httpx.py::tls_findings`,
-`backend/app/adapters/dnsx.py::dns_posture_findings`), so the fake pipeline exercises
-the exact same rule logic offline. Neither needed a new tool, a migration, or a PRD
-tool-bundle amendment — see `Trash_Scan_PRD.md` §25 "Phase 6" for the full writeup,
-including the two pieces (broader crawling via katana; external OSINT lookups via
-crt.sh/WHOIS) that are planned but **not yet built**, because they do need new-tool
-or new-external-dependency governance first.
+Findings from data the tool bundle already had access to, plus one new external
+lookup shipped off by default. See `Trash_Scan_PRD.md` §25 "Phase 6" for the full
+writeup, including the one remaining piece (broader crawling via katana) that is
+planned but **not yet built** because it needs new-tool governance first (a
+checksum-pinned binary + a §12 tool-bundle amendment, unlike the three below).
 
 - **TLS/certificate posture** (source tool `httpx`) — `tls-cert-expired` (HIGH),
   `tls-cert-expiring-soon` (MEDIUM, within 30 days), `tls-self-signed` (LOW),
   `tls-hostname-mismatch` (MEDIUM), `tls-deprecated-protocol` (HIGH for SSLv3,
   MEDIUM for TLS 1.0/1.1). Derived from the `-tls-grab` data httpx was already
-  capturing.
+  capturing. No new tool, no PRD amendment.
 - **Passive DNS-record posture** (source tool `dnsx`, domain targets only) —
   `dns-spf-missing` / `dns-spf-permissive` (`+all`), `dns-dmarc-missing` /
   `dns-dmarc-policy-none` (`p=none`), `dns-caa-missing`. dnsx now also resolves
   `_dmarc.<domain>` so the DMARC record is actually queried. Runs for both passive
-  and active scans of a domain target, same as the rest of dnsx's output.
-- `services/comparison.py`'s `_STAGE_FOR_TOOL` map gained `httpx` and `dnsx` entries
-  so these findings participate correctly in NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED
-  baseline comparison instead of only ever showing as a "did not complete"
-  limitation.
+  and active scans of a domain target, same as the rest of dnsx's output. No new
+  tool, no PRD amendment.
+- **External OSINT lookups** (source tool `osint`, domain targets only, **off by
+  default** — `TRASHSCAN_ENABLE_EXTERNAL_OSINT` / `.env`'s `ENABLE_EXTERNAL_OSINT`)
+  — unlike the two above, this one *is* a new kind of capability: the app itself
+  makes a live outbound call to crt.sh and to RDAP at scan time, sending the
+  target's domain to each. crt.sh subdomains become new discovered (unapproved)
+  hostname assets, same as Subfinder's. RDAP registrar/creation/expiry/nameservers
+  become observations; an expiring or already-lapsed registration becomes a
+  finding (`osint-domain-registration-expiring-soon` MEDIUM /
+  `osint-domain-registration-expired` HIGH — a lapsed domain can be re-registered
+  by a third party). Runs only in the `PASSIVE` profile, positioned right after
+  Subfinder so any newly-discovered subdomains still get resolved by the dnsx
+  stage that follows. Both external calls go through an injectable fetcher
+  (`adapters/osint.py::set_fetcher`, the same pattern `scope_db.set_resolver`
+  uses for DNS) so the test suite never touches the network; the fake adapter
+  always runs deterministically regardless of the flag, the same as every other
+  fake adapter ignoring the real one's gating flags.
+- `services/comparison.py`'s `_STAGE_FOR_TOOL` map gained `httpx`, `dnsx`, and
+  `osint` entries so these findings participate correctly in
+  NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED baseline comparison instead of only
+  ever showing as a "did not complete" limitation.
 
 ## Tests
 
-The suite is now **133 tests**. Post-MVP additions:
+The suite is now **146 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too), `test_enrichment.py` (TLS-posture and
-SPF/DMARC/CAA finding rules, end to end through both scan classifications).
+SPF/DMARC/CAA finding rules, end to end through both scan classifications),
+`test_osint.py` (crt.sh/RDAP parsing, the off-by-default gate, and the injected-fetcher
+adapter path — fully offline).
 
 ## Concurrency fix
 

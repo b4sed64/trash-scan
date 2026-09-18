@@ -147,7 +147,12 @@ target as `NEW` / `STILL_OBSERVED` / `CHANGED` / `NOT_OBSERVED`.
 Findings aren't Nuclei-only: httpx's TLS/certificate metadata is interpreted into posture
 findings (expired/expiring certificate, self-signed, hostname mismatch, deprecated
 protocol), and dnsx's TXT/CAA records are interpreted into SPF/DMARC/CAA posture findings
-for domain targets — both using data those tools were already collecting.
+for domain targets — both using data those tools were already collecting. An optional,
+**off-by-default** OSINT stage (`TRASHSCAN_ENABLE_EXTERNAL_OSINT`) additionally queries
+crt.sh (Certificate Transparency) for subdomains and RDAP for domain-registration data
+(registrar, expiry, nameservers), flagging an expiring or lapsed registration — the one
+capability here that sends the target's domain to a third-party public service, so it's
+opt-in rather than on by default.
 
 ### Tamper-evident audit (`audit_service.py`)
 
@@ -300,14 +305,15 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**133 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**146 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
 state machine and idempotency, one-scan-many-targets grouping, manual start / pause / stop,
 scheduling, the active-scan approval workflow (expired approval, replay, scope re-check,
-runtime timeout, emergency stop), tool-output parsers, TLS-posture and SPF/DMARC/CAA finding
-rules, finding fingerprints and baseline comparison, CSV formula neutralization + PDF
+runtime timeout, emergency stop), tool-output parsers, TLS-posture, SPF/DMARC/CAA, and
+external-OSINT finding rules, finding fingerprints and baseline comparison, CSV formula
+neutralization + PDF
 generation, retention, the maintenance workflow, port-spec validation, and the fake adapters.
 
 ## Everyday operations

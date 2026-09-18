@@ -43,6 +43,7 @@ services:
       TRASHSCAN_RESULT_ROOT: /app/artifacts/scans
       TRASHSCAN_DNS_RESOLVERS: "${DNS_RESOLVERS:-}"
       TRASHSCAN_ALLOW_RAW_PACKET: "false"
+      TRASHSCAN_ENABLE_EXTERNAL_OSINT: "${ENABLE_EXTERNAL_OSINT:-false}"
       TRASHSCAN_RUN_SEED: "${RUN_SEED:-0}"
     depends_on:
       db:

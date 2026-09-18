@@ -27,6 +27,7 @@ To change anything not surfaced in `.env`, add it to the `backend_env` anchor in
 | `SCANNER_MODE` | `real` | `real` → run the pinned Subfinder/dnsx/Nmap/httpx/Nuclei binaries. `fake` → deterministic offline stub adapters (no network, used by the test suite and the demo). |
 | `RUN_SEED` | `0` | `1` → the `api` entrypoint runs `python -m app.seed` on start (minimal dev data). Leave `0` for a clean first-run you drive through the UI. |
 | `DNS_RESOLVERS` | *(empty)* | Comma-separated internal DNS resolvers for the lab. Empty → use the container's system resolver. |
+| `ENABLE_EXTERNAL_OSINT` | `0` | `1` → passive scans of a domain target also query crt.sh (Certificate Transparency) and RDAP (WHOIS) — see below. |
 | `TRASHSCAN_SEED_ADMIN` / `TRASHSCAN_SEED_ADMIN_PASSWORD` | `admin` / `change-me-admin-123` | Credentials the **minimal seed** (`RUN_SEED=1`) creates. Change them. |
 | `TRASHSCAN_SEED_SCANNER` / `TRASHSCAN_SEED_SCANNER_PASSWORD` | `scanner` / `change-me-scanner-123` | Scanner account the minimal seed creates. |
 | `TRASHSCAN_SEED_CIDR` | `10.10.0.0/16` | Allowed CIDR the minimal seed adds to scope. |
@@ -123,6 +124,22 @@ The scanner only ever invokes product-approved options — never a raw flag from
 Administrators can also define **named port sets** in the UI (Administration → Port Sets);
 a scan picks a built-in preset, a defined set, and/or a typed list. Any spec is validated
 and capped at 6000 ports.
+
+## External OSINT lookups
+
+| Variable | Default | Notes |
+|---|---|---|
+| `TRASHSCAN_ENABLE_EXTERNAL_OSINT` | `false` | Master switch (`.env`'s `ENABLE_EXTERNAL_OSINT`). While `false` the `osint` stage is a pure no-op — nothing is sent anywhere. |
+
+Unlike every other capability in this table, enabling this one means the application
+itself makes a live outbound HTTPS call — to `crt.sh` (Certificate Transparency logs)
+and to `rdap.org` (WHOIS/RDAP) — at scan time, for every passive scan of a domain
+target, sending that domain to each service. This is a materially different privacy
+posture than the pinned-CLI-tool bundle, which never talks to anything but the target
+and your configured DNS resolvers. Turn it on only once you're comfortable with that
+domain leaving your network for two well-known public record services. When enabled,
+newly-discovered subdomains are added as unapproved assets (same as Subfinder's), and
+a domain registration expiring within 30 days (or already lapsed) becomes a finding.
 
 ---
 

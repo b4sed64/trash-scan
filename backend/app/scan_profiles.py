@@ -13,6 +13,7 @@ from .adapters.base import (
     STAGE_HTTPX,
     STAGE_NMAP,
     STAGE_NUCLEI,
+    STAGE_OSINT,
     STAGE_SUBFINDER,
 )
 
@@ -39,7 +40,7 @@ class Profile:
 PROFILES: dict[str, Profile] = {
     PASSIVE: Profile(
         name=PASSIVE, classification="PASSIVE",
-        stages=(STAGE_SUBFINDER, STAGE_DNSX),
+        stages=(STAGE_SUBFINDER, STAGE_OSINT, STAGE_DNSX),
         nmap_service_detection=False, nmap_syn=False, nmap_os_detection=False,
         description="Public OSINT, passive subdomains, DNS resolution. No approval required.",
     ),

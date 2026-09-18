@@ -97,7 +97,10 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
   results — scoped to that one execution (`GET /api/scans/{id}` now includes
   `observations` per host, backed by `Observation.execution_id`, alongside the
   `stages` array's existing `stderr_excerpt` and `note`, which the UI simply wasn't
-  rendering before).
+  rendering before). Stages, Findings, Services, Assets, and Observations are each
+  their own collapsible block within a host card — Stages and Findings open by
+  default, the rest closed, so a host with a lot of history doesn't dump every
+  table on screen at once.
 - **Approvals** — one row per scan; multi-target scans show every target and are approved
   once. Approving no longer runs the scan (except scheduled occurrences); the requester
   presses Start.

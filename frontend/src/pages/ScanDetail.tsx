@@ -210,87 +210,100 @@ export function ScanDetail() {
           {h.error && <p className="error">{h.error}</p>}
 
           {(h.stages ?? []).length > 0 && (
-            <div style={{ overflowX: "auto", marginBottom: "0.8rem" }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Stage</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Detail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(h.stages ?? []).map((st) => (
-                    <tr key={st.stage}>
-                      <td>{st.stage}</td>
-                      <td>
-                        <span className={`badge ${st.ok ? "ok" : "bad"} status-dot`}>
-                          {st.ok ? "ok" : "failed"}
-                        </span>
-                        {st.incomplete && <span className="badge warn"> incomplete</span>}
-                      </td>
-                      <td className="muted">{(st.duration_ms / 1000).toFixed(1)}s</td>
-                      <td
-                        className={st.ok ? "muted" : "error"}
-                        style={{ fontSize: "0.82rem", maxWidth: 420 }}
-                        title={st.stderr_excerpt || undefined}
-                      >
-                        {st.note || (st.ok ? "—" : (st.stderr_excerpt.split("\n")[0] || "no output captured"))}
-                      </td>
+            <details style={{ marginBottom: "0.8rem" }} open>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                Stages ({(h.stages ?? []).length})
+              </summary>
+              <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Stage</th>
+                      <th>Status</th>
+                      <th>Duration</th>
+                      <th>Detail</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(h.stages ?? []).map((st) => (
+                      <tr key={st.stage}>
+                        <td>{st.stage}</td>
+                        <td>
+                          <span className={`badge ${st.ok ? "ok" : "bad"} status-dot`}>
+                            {st.ok ? "ok" : "failed"}
+                          </span>
+                          {st.incomplete && <span className="badge warn"> incomplete</span>}
+                        </td>
+                        <td className="muted">{(st.duration_ms / 1000).toFixed(1)}s</td>
+                        <td
+                          className={st.ok ? "muted" : "error"}
+                          style={{ fontSize: "0.82rem", maxWidth: 420 }}
+                          title={st.stderr_excerpt || undefined}
+                        >
+                          {st.note || (st.ok ? "—" : (st.stderr_excerpt.split("\n")[0] || "no output captured"))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           )}
 
-          <h4>Findings ({h.findings.length})</h4>
-          {h.findings.length === 0 ? (
-            <p className="muted">Nothing flagged on this host.</p>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Severity</th>
-                    <th>Finding</th>
-                    <th>Asset</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {h.findings.map((f) => (
-                    <tr key={f.id}>
-                      <td>
-                        <span className={`sev-tag sev-${f.severity}`}>{f.severity}</span>
-                      </td>
-                      <td title={f.rule_id}>
-                        {f.name}
-                        <div className="muted" style={{ fontSize: "0.8rem" }}>
-                          {f.evidence_summary}
-                        </div>
-                      </td>
-                      <td>
-                        {f.asset_value}
-                        {f.port ? `:${f.port}` : ""}
-                      </td>
-                      <td>
-                        <span className={`badge ${f.status === "NOT_OBSERVED" ? "ok" : ""}`}>
-                          {f.status.replace("_", " ")}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <details style={{ marginBottom: "0.8rem" }} open>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+              Findings ({h.findings.length})
+            </summary>
+            <div style={{ marginTop: "0.5rem" }}>
+              {h.findings.length === 0 ? (
+                <p className="muted">Nothing flagged on this host.</p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Severity</th>
+                        <th>Finding</th>
+                        <th>Asset</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {h.findings.map((f) => (
+                        <tr key={f.id}>
+                          <td>
+                            <span className={`sev-tag sev-${f.severity}`}>{f.severity}</span>
+                          </td>
+                          <td title={f.rule_id}>
+                            {f.name}
+                            <div className="muted" style={{ fontSize: "0.8rem" }}>
+                              {f.evidence_summary}
+                            </div>
+                          </td>
+                          <td>
+                            {f.asset_value}
+                            {f.port ? `:${f.port}` : ""}
+                          </td>
+                          <td>
+                            <span className={`badge ${f.status === "NOT_OBSERVED" ? "ok" : ""}`}>
+                              {f.status.replace("_", " ")}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
+          </details>
 
           {h.services.length > 0 && (
-            <>
-              <h4>Services ({h.services.length})</h4>
-              <div style={{ overflowX: "auto" }}>
+            <details style={{ marginBottom: "0.8rem" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                Services ({h.services.length})
+              </summary>
+              <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
                 <table>
                   <thead>
                     <tr>
@@ -314,13 +327,15 @@ export function ScanDetail() {
                   </tbody>
                 </table>
               </div>
-            </>
+            </details>
           )}
 
           {h.assets.length > 0 && (
-            <>
-              <h4>Assets ({h.assets.length})</h4>
-              <div style={{ overflowX: "auto" }}>
+            <details style={{ marginBottom: "0.8rem" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                Assets ({h.assets.length})
+              </summary>
+              <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>
                 <table>
                   <thead>
                     <tr>
@@ -346,12 +361,12 @@ export function ScanDetail() {
                   </tbody>
                 </table>
               </div>
-            </>
+            </details>
           )}
 
           {h.observations.length > 0 && (
-            <details style={{ marginTop: "0.8rem" }}>
-              <summary style={{ cursor: "pointer" }}>
+            <details style={{ marginBottom: "0.8rem" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                 Observations ({h.observations.length})
               </summary>
               <div style={{ overflowX: "auto", marginTop: "0.5rem" }}>

@@ -157,6 +157,8 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - Conservative connection and request rates.
 - Basic service metadata.
 - HTTP status, title, headers, TLS metadata, and technology detection.
+- A shallow, bounded crawl of discovered web hosts (katana) feeding additional
+  in-scope endpoints to the Nuclei stage below.
 - Reviewed low-impact Nuclei templates.
 - Typed attestation and fresh administrator approval required.
 
@@ -167,6 +169,7 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - Service/version detection.
 - OS detection with confidence and environment limitations.
 - HTTP inspection.
+- A deeper, still-bounded crawl of discovered web hosts (katana), same as Safe active.
 - The same restricted Nuclei template policy as Safe active.
 - Typed attestation and fresh administrator approval required.
 
@@ -325,7 +328,7 @@ Priority values: **Must**, **Should**, and **Could**.
 
 ## 12. Tool bundle and restrictions
 
-The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, and restricted Nuclei. Scanner binaries and templates must be pinned and included in the worker image; the application must not download tools during a scan.
+The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDiscovery katana, and restricted Nuclei. Scanner binaries and templates must be pinned and included in the worker image; the application must not download tools during a scan.
 
 ### 12.1 Nmap
 
@@ -395,7 +398,33 @@ The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, and restri
 - Require explicit review before headless templates or multi-step workflows are added.
 - Store the template identifier, template content hash, severity, matcher summary, and evidence for every result.
 
-### 12.6 Version and template governance
+### 12.6 ProjectDiscovery katana
+
+Added post-MVP (Phase 6, §25) to broaden endpoint discovery for the Safe and Standard
+Active profiles. Same governance as every other tool in this bundle: pinned, checksummed,
+bounded, no raw or user-supplied flags.
+
+**Approved responsibilities**
+
+- Discover additional in-scope endpoints (pages, statically-parsed JavaScript-referenced
+  routes) reachable from the web hosts httpx already probed in the same execution.
+- Feed newly discovered endpoints into that same execution's Nuclei stage.
+
+**Restrictions**
+
+- Crawl only hosts already resolved and scope-checked earlier in the same execution —
+  never an independently-supplied host.
+- Default host-based scope stays on; the crawler never leaves the seed host's registrable
+  domain (no raw regex scope override).
+- Bounded crawl depth (product-fixed per profile, mirroring Nmap's timing template),
+  bounded pages per host, bounded crawl-duration budget, and the same request-rate limit
+  as the rest of the active stages — none of these are user-supplied.
+- No headless or browser-based crawling: JavaScript is parsed statically for endpoints,
+  never executed. No automatic form filling. No live secret-validation API calls.
+- Discovered endpoints are unapproved discoveries, exactly like every other adapter's
+  assets/observations — never automatically escalated to a new target.
+
+### 12.7 Version and template governance
 
 - Pin tool versions in the worker image.
 - Copy the reviewed Nuclei allowlist into the image by immutable version or content hash.
@@ -769,13 +798,15 @@ responsibilities, plus two governance decisions carried over from §12 and §29.
   `p=none` (monitor-only) policy, and missing CAA. Domain targets only; classified
   PASSIVE like the rest of dnsx's output, so no new approval step. No new tool, no
   PRD amendment needed.
-- **Broader crawling (ProjectDiscovery katana)** — Planned, not yet built. Unlike the
-  two above, this is a genuinely new tool outside the §12 bundle (currently Nmap,
-  Subfinder, dnsx, httpx, restricted Nuclei) and needs the same governance treatment
-  as the others before it ships: a pinned, checksum-verified binary; an approved
-  responsibilities/restrictions subsection (bounded crawl depth/page count/time
-  budget, same-host only, no form submission, classified ACTIVE); and a new
-  `worker` stage wired into the Safe/Standard profiles between httpx and Nuclei.
+- **Broader crawling (ProjectDiscovery katana)** — Delivered. Unlike the two above,
+  this was a genuinely new tool outside the original §12 bundle, so it got the same
+  governance treatment as the rest before shipping: pinned to an exact version and
+  checksum-verified at build time (§12.6), an approved responsibilities/restrictions
+  write-up, and a new `worker` stage (`katana`) wired into the Safe and Standard
+  Active profiles between `httpx` and `nuclei` — bounded crawl depth (by profile),
+  bounded pages per host, bounded time budget, no headless/browser execution, no
+  automatic form filling. Discovered endpoints feed that same execution's Nuclei
+  stage via the existing `web_probes` mechanism.
 - **External OSINT lookups (crt.sh Certificate Transparency, WHOIS/RDAP domain
   registration)** — Delivered, off by default. This lifts the "broader OSINT
   providers" line that was sitting in §29's deferred backlog. Unlike the rest of
@@ -791,9 +822,8 @@ responsibilities, plus two governance decisions carried over from §12 and §29.
   classified PASSIVE — it never contacts the target itself.
 
 **Exit condition:** TLS posture, DNS-record enrichment, and external OSINT findings
-appear on a completed scan and survive baseline comparison — done for all three;
-katana remains the one piece needing a §12 tool-bundle amendment before it can
-ship under that same governance, or stay explicitly deferred.
+appear on a completed scan and survive baseline comparison; katana's discovered
+endpoints appear in the same execution's Nuclei coverage. All four delivered.
 
 ## 26. Vibe-coding guardrails
 
@@ -894,7 +924,7 @@ Exploitation, credential testing, brute force, fuzzing, denial-of-service, spoof
 | Maximum runtime | Two hours, measured from execution start |
 | Scheduled attestation | Persistent while unchanged; each active occurrence still needs approval |
 | Visibility | Scanner sees assigned targets only; Administrator sees all |
-| Tool bundle | Nmap, Subfinder, dnsx, ProjectDiscovery httpx, restricted Nuclei |
+| Tool bundle | Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDiscovery katana, restricted Nuclei |
 | Updates | Pinned and manual; never during a scan |
 | Notifications | Dashboard only |
 | Finding absent later | Not observed; never automatically Resolved |

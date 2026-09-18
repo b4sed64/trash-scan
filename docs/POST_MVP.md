@@ -112,13 +112,11 @@ private CIDRs and public boundaries) instead of re-filtering by private CIDR alo
 the redundant, incomplete `_within_scope` helper is removed. Regression test:
 `test_active_workflow.py::test_active_scan_launches_against_a_public_boundary_target`.
 
-## Enrichment scanning (Phase 6)
+## Enrichment scanning (Phase 6 — complete)
 
-Findings from data the tool bundle already had access to, plus one new external
-lookup shipped off by default. See `Trash_Scan_PRD.md` §25 "Phase 6" for the full
-writeup, including the one remaining piece (broader crawling via katana) that is
-planned but **not yet built** because it needs new-tool governance first (a
-checksum-pinned binary + a §12 tool-bundle amendment, unlike the three below).
+Findings from data the tool bundle already had access to, one new external lookup
+shipped off by default, and one new pinned tool for broader crawling. See
+`Trash_Scan_PRD.md` §25 "Phase 6" for the full writeup.
 
 - **TLS/certificate posture** (source tool `httpx`) — `tls-cert-expired` (HIGH),
   `tls-cert-expiring-soon` (MEDIUM, within 30 days), `tls-self-signed` (LOW),
@@ -151,16 +149,38 @@ checksum-pinned binary + a §12 tool-bundle amendment, unlike the three below).
   `osint` entries so these findings participate correctly in
   NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED baseline comparison instead of only
   ever showing as a "did not complete" limitation.
+- **Broader crawling (ProjectDiscovery katana)** — the one addition that's a
+  genuinely new tool, not an extension of one already in the bundle (PRD §12.6).
+  Pinned to `v1.7.0` and checksum-verified at build time, same as the other four
+  (katana's release uses a differently-named checksums file than the others, so
+  it gets its own verified-download step in `backend/Dockerfile` rather than
+  joining their shared loop). New stage `katana`, wired into `SAFE_ACTIVE` and
+  `STANDARD_ACTIVE` between `httpx` and `nuclei`: it crawls the web hosts httpx
+  already probed (bounded depth — 1 for Safe, 2 for Standard; bounded pages per
+  host; a bounded time budget; no headless/browser execution; no automatic form
+  filling; default host-based scope stays on) and feeds newly discovered
+  endpoints into that same execution's Nuclei stage via the existing
+  `web_probes` mechanism (`worker/runner.py`'s feed-forward condition now also
+  accepts katana's `endpoint`-tagged observations, not just nmap's `web-port`
+  ones). Not in the `PASSIVE` profile. Emits no findings itself — it only
+  broadens what Nuclei gets to see.
+- Fixed a latent bug this surfaced: the fake `httpx`/`nuclei` adapters derived a
+  finding's host with `probe.split(":")[0]`, which assumed every probe was a bare
+  `ip[:port]`. Once the fake katana adapter started adding full URLs to the same
+  probe pool, that produced a bogus host (`"http"`) and duplicate `Finding` rows
+  for the same underlying host. Fixed with a shared `_probe_host()` helper that
+  handles both shapes, matching how a real httpx/nuclei invocation would.
 
 ## Tests
 
-The suite is now **146 tests**. Post-MVP additions:
+The suite is now **150 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too), `test_enrichment.py` (TLS-posture and
 SPF/DMARC/CAA finding rules, end to end through both scan classifications),
 `test_osint.py` (crt.sh/RDAP parsing, the off-by-default gate, and the injected-fetcher
-adapter path — fully offline).
+adapter path — fully offline), `test_katana.py` (endpoint parsing against katana's
+real JSONL shape, profile wiring, and end-to-end through the fake pipeline).
 
 ## Concurrency fix
 

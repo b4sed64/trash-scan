@@ -2,7 +2,7 @@
 #
 # Scanner binaries are pinned by version and verified against the publisher's
 # checksums file at build time. The application never downloads tools during a
-# scan (PRD §12, §12.6).
+# scan (PRD §12, §12.7).
 FROM python:3.12.8-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -14,6 +14,7 @@ ARG SUBFINDER_VERSION=2.6.6
 ARG DNSX_VERSION=1.2.1
 ARG HTTPX_VERSION=1.6.9
 ARG NUCLEI_VERSION=3.3.7
+ARG KATANA_VERSION=1.7.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -46,6 +47,24 @@ RUN set -eux; \
     done; \
     subfinder -version; dnsx -version; httpx-pd -version; nuclei -version
 
+# katana's release uses a differently-named checksums file (katana-<ver>-checksums.txt,
+# hyphens) than the other four tools (<tool>_<ver>_checksums.txt, underscores), so it
+# gets its own verified-download step rather than joining their shared loop.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in amd64) pd_arch=amd64 ;; arm64) pd_arch=arm64 ;; *) echo "unsupported arch $arch"; exit 1 ;; esac; \
+    cd /tmp; \
+    base="https://github.com/projectdiscovery/katana/releases/download/v${KATANA_VERSION}"; \
+    zip="katana_${KATANA_VERSION}_linux_${pd_arch}.zip"; \
+    curl -fsSL -o "$zip" "${base}/${zip}"; \
+    curl -fsSL -o "katana_checksums.txt" "${base}/katana-${KATANA_VERSION}-checksums.txt"; \
+    grep " ${zip}\$" "katana_checksums.txt" | sha256sum -c -; \
+    unzip -o "$zip" "katana" -d /tmp/pd; \
+    mv "/tmp/pd/katana" "/usr/local/bin/katana"; \
+    chmod +x "/usr/local/bin/katana"; \
+    rm -f "$zip" "katana_checksums.txt"; \
+    katana -version
+
 WORKDIR /app
 
 RUN adduser --system --group --home /app appuser
@@ -56,7 +75,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Validate the immutable Nuclei template allowlist and its content-hash manifest
-# at build time; a bad template fails the build (PRD §12.5 / §12.6).
+# at build time; a bad template fails the build (PRD §12.5 / §12.7).
 RUN HOME=/tmp nuclei -validate -duc -t templates/nuclei \
     && python -c "from app.adapters.nuclei import verify_template_set; import sys; ok,_,r=verify_template_set(__import__('pathlib').Path('templates/nuclei')); sys.exit(0 if ok else ('manifest mismatch: '+r))"
 

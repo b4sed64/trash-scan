@@ -1,4 +1,4 @@
-"""Reports, CSV exports, retention and maintenance (PRD §16, §17, §12.6)."""
+"""Reports, CSV exports, retention and maintenance (PRD §16, §17, §12.7)."""
 from __future__ import annotations
 
 import datetime as dt

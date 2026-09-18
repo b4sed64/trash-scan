@@ -120,6 +120,10 @@ The scanner only ever invokes product-approved options — never a raw flag from
 | `TRASHSCAN_NMAP_TIMING_STANDARD` | `T3` | Nmap timing template for `STANDARD_ACTIVE`. |
 | `TRASHSCAN_HTTPX_FOLLOW_REDIRECTS` | `false` | httpx does not follow redirects; the `Location` header is captured and scope-checked instead. |
 | `TRASHSCAN_HTTPX_MAX_REDIRECTS` | `0` | Redirect hops httpx may follow (kept at 0). |
+| `TRASHSCAN_KATANA_DEPTH_SAFE` | `1` | Crawl depth for `SAFE_ACTIVE` (hops from each seed URL). |
+| `TRASHSCAN_KATANA_DEPTH_STANDARD` | `2` | Crawl depth for `STANDARD_ACTIVE`. |
+| `TRASHSCAN_KATANA_MAX_PAGES_PER_HOST` | `25` | Bound on pages katana will crawl per host, either profile. |
+| `TRASHSCAN_KATANA_CRAWL_DURATION_SECONDS` | `60` | Wall-clock time budget for the crawl, either profile. |
 
 Administrators can also define **named port sets** in the UI (Administration → Port Sets);
 a scan picks a built-in preset, a defined set, and/or a typed list. Any spec is validated

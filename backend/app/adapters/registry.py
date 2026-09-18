@@ -9,6 +9,7 @@ from ..config import get_settings
 from .base import (
     STAGE_DNSX,
     STAGE_HTTPX,
+    STAGE_KATANA,
     STAGE_NMAP,
     STAGE_NUCLEI,
     STAGE_OSINT,
@@ -19,12 +20,14 @@ from .dnsx import DnsxAdapter
 from .fake import (
     FakeDnsxAdapter,
     FakeHttpxAdapter,
+    FakeKatanaAdapter,
     FakeNmapAdapter,
     FakeNucleiAdapter,
     FakeOsintAdapter,
     FakeSubfinderAdapter,
 )
 from .httpx import HttpxAdapter
+from .katana import KatanaAdapter
 from .nmap import NmapAdapter
 from .nuclei import NucleiAdapter
 from .osint import OsintAdapter
@@ -37,6 +40,7 @@ _REAL = {
     STAGE_HTTPX: HttpxAdapter,
     STAGE_NUCLEI: NucleiAdapter,
     STAGE_OSINT: OsintAdapter,
+    STAGE_KATANA: KatanaAdapter,
 }
 _FAKE = {
     STAGE_SUBFINDER: FakeSubfinderAdapter,
@@ -45,6 +49,7 @@ _FAKE = {
     STAGE_HTTPX: FakeHttpxAdapter,
     STAGE_NUCLEI: FakeNucleiAdapter,
     STAGE_OSINT: FakeOsintAdapter,
+    STAGE_KATANA: FakeKatanaAdapter,
 }
 
 

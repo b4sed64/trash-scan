@@ -7,7 +7,7 @@ out=nuclei-manifest.json
 cd nuclei
 {
   echo '{'
-  echo '  "_comment": "Immutable reviewed Nuclei template allowlist. sha256 of each file; the adapter refuses to run if a file does not match (PRD 12.5/12.6). Regenerate deliberately via scripts/gen_template_manifest.sh after review.",'
+  echo '  "_comment": "Immutable reviewed Nuclei template allowlist. sha256 of each file; the adapter refuses to run if a file does not match (PRD 12.5/12.7). Regenerate deliberately via scripts/gen_template_manifest.sh after review.",'
   echo '  "templates": {'
   first=1
   for f in *.yaml; do

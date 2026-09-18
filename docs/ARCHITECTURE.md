@@ -108,8 +108,8 @@ each stage's argv is assembled from product-defined options only.
 | Profile | Class | Stages | Notes |
 |---|---|---|---|
 | `PASSIVE` | passive | `subfinder` → `osint` → `dnsx` | Public OSINT + DNS resolution. No approval. `subfinder` runs only for DOMAIN targets; `osint` (crt.sh/RDAP) is a no-op unless `TRASHSCAN_ENABLE_EXTERNAL_OSINT=true`. Positioned before `dnsx` so any subdomains it discovers still get resolved. |
-| `SAFE_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `nuclei` | Nmap **TCP-connect**, service metadata, HTTP inspection, low-impact reviewed Nuclei templates. |
-| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `nuclei` | Broader port set, service/version detection. SYN scan + OS detection **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
+| `SAFE_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Nmap **TCP-connect**, service metadata, HTTP inspection, a shallow bounded crawl (depth 1) of discovered web hosts, low-impact reviewed Nuclei templates. |
+| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Broader port set, service/version detection, a deeper bounded crawl (depth 2). SYN scan + OS detection **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
 
 Ports come from a built-in preset, an admin-defined named port set, and/or a typed list
 (validated, capped at 6000 ports). Nmap timing is a template (`T2`/`T3`) chosen from
@@ -247,17 +247,30 @@ retention actions, and tool/template maintenance.
 
 ## 7. Scanner tools & the fake mode
 
-`adapters/` has one module per tool (`subfinder`, `dnsx`, `httpx`, `nmap`, `nuclei`), a
-shared subprocess runner (`_exec.py`), a `fake.py` with deterministic stubs, and a
-`registry.py` that returns the real or fake adapter based on `TRASHSCAN_SCANNER_MODE`.
+`adapters/` has one module per tool (`subfinder`, `dnsx`, `httpx`, `nmap`, `katana`,
+`nuclei`), a shared subprocess runner (`_exec.py`), a `fake.py` with deterministic
+stubs, and a `registry.py` that returns the real or fake adapter based on
+`TRASHSCAN_SCANNER_MODE`.
 
 `backend/Dockerfile` pins each ProjectDiscovery tool to an exact version
-(`SUBFINDER 2.6.6`, `DNSX 1.2.1`, `HTTPX 1.6.9`, `NUCLEI 3.3.7`) and verifies the download
-against the publisher's `*_checksums.txt` **at build time**. httpx is installed as
-`httpx-pd` to avoid clashing with the Python `httpx` client. Nmap comes from the Debian
-package. The Nuclei template set under `backend/templates/nuclei` is an immutable allowlist
-with a content-hash manifest validated during the build (`verify_template_set`). Every tool
-runs with update checks disabled — **nothing is fetched at runtime.**
+(`SUBFINDER 2.6.6`, `DNSX 1.2.1`, `HTTPX 1.6.9`, `KATANA 1.7.0`, `NUCLEI 3.3.7`) and
+verifies the download against the publisher's checksums file **at build time**. httpx
+is installed as `httpx-pd` to avoid clashing with the Python `httpx` client. katana's
+release names its checksums file differently from the other four (hyphens, no per-tool
+prefix), so it gets its own verified-download step in the Dockerfile rather than
+joining their shared loop. Nmap comes from the Debian package. The Nuclei template set
+under `backend/templates/nuclei` is an immutable allowlist with a content-hash manifest
+validated during the build (`verify_template_set`). Every tool runs with update checks
+disabled — **nothing is fetched at runtime.**
+
+`katana` crawls the web hosts `httpx` already probed in the same execution (bounded
+depth — 1 for `SAFE_ACTIVE`, 2 for `STANDARD_ACTIVE`; bounded pages per host; a bounded
+time budget; no headless/browser execution, so JavaScript is parsed statically for
+endpoints, never run) and discovers additional endpoints. Those feed into `web_probes`
+— the same accumulator `nmap`'s discovered web ports use — so the Nuclei stage that
+runs right after `katana` sees the broader URL set too. It emits no findings itself,
+only observations (`kind="TECH", key="endpoint"`); Nuclei is what turns any of those
+endpoints into a finding.
 
 One adapter, `osint.py`, is not a pinned CLI binary at all: it is the application making
 its own outbound HTTPS calls to crt.sh and RDAP at scan time, gated off by default by

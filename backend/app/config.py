@@ -90,6 +90,14 @@ class Settings(BaseSettings):
     httpx_max_redirects: int = 0
     httpx_follow_redirects: bool = False
 
+    # katana crawl bounds (product-fixed, never a raw/user-supplied flag). Depth
+    # varies by profile like Nmap's timing template; page count and time budget
+    # are single global caps.
+    katana_depth_safe: int = 1
+    katana_depth_standard: int = 2
+    katana_max_pages_per_host: int = 25
+    katana_crawl_duration_seconds: int = 60
+
     def resolver_list(self) -> list[str]:
         return [r.strip() for r in self.dns_resolvers.split(",") if r.strip()]
 
@@ -98,6 +106,9 @@ class Settings(BaseSettings):
 
     def timing_for_profile(self, profile: str) -> str:
         return self.nmap_timing_standard if profile == "STANDARD_ACTIVE" else self.nmap_timing_safe
+
+    def katana_depth_for_profile(self, profile: str) -> int:
+        return self.katana_depth_standard if profile == "STANDARD_ACTIVE" else self.katana_depth_safe
 
 
 @lru_cache

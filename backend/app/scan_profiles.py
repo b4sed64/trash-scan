@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from .adapters.base import (
     STAGE_DNSX,
     STAGE_HTTPX,
+    STAGE_KATANA,
     STAGE_NMAP,
     STAGE_NUCLEI,
     STAGE_OSINT,
@@ -46,18 +47,20 @@ PROFILES: dict[str, Profile] = {
     ),
     SAFE_ACTIVE: Profile(
         name=SAFE_ACTIVE, classification="ACTIVE",
-        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_NUCLEI),
+        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=False, nmap_os_detection=False,
         description="TCP connect scan of common ports, light service metadata, HTTP inspection, "
-                    "reviewed low-impact Nuclei templates.",
+                    "a shallow bounded crawl of discovered web hosts, and reviewed low-impact "
+                    "Nuclei templates.",
     ),
     STANDARD_ACTIVE: Profile(
         name=STANDARD_ACTIVE, classification="ACTIVE",
-        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_NUCLEI),
+        stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=True, nmap_os_detection=True,
         description=(
-            "Broader TCP port set, service/version detection, HTTP inspection. "
-            "SYN scan and OS detection only where raw-packet capability is available."
+            "Broader TCP port set, service/version detection, HTTP inspection, a deeper "
+            "bounded crawl of discovered web hosts. SYN scan and OS detection only where "
+            "raw-packet capability is available."
         ),
     ),
 }

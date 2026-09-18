@@ -1,4 +1,4 @@
-"""Tool & template maintenance workflow (PRD §12.6).
+"""Tool & template maintenance workflow (PRD §12.7).
 
 The application never updates tools or templates itself. This surface records the
 current pinned versions and the reviewed template set, lets an administrator

@@ -13,6 +13,7 @@ from ..adapters import StageInput, get_adapter
 from ..adapters.base import (
     STAGE_DNSX,
     STAGE_HTTPX,
+    STAGE_KATANA,
     STAGE_NMAP,
     STAGE_NUCLEI,
     STAGE_OSINT,
@@ -191,7 +192,10 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             hosts = list(discovered_hosts)
         elif stage_name == STAGE_NMAP:
             hosts = list(in_scope_ips)
-        elif stage_name in (STAGE_HTTPX, STAGE_NUCLEI):
+        elif stage_name in (STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI):
+            # katana crawls the same web hosts httpx just probed; whatever it
+            # discovers is folded into web_probes below, in time for Nuclei
+            # (the next stage) to see it too.
             hosts = sorted(set(web_probes) | set(in_scope_ips))
         else:
             hosts = []
@@ -223,7 +227,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             if a.kind == "HOSTNAME" and a.value not in discovered_hosts:
                 discovered_hosts.append(a.value)
         for o in out.observations:
-            if o.kind == "TECH" and o.key == "web-port" and o.value not in web_probes:
+            if o.kind == "TECH" and o.key in ("web-port", "endpoint") and o.value not in web_probes:
                 web_probes.append(o.value)
 
     # --- persist results ----------------------------------------------

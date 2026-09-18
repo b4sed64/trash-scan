@@ -1,5 +1,5 @@
 {
-  "_comment": "Immutable reviewed Nuclei template allowlist. sha256 of each file; the adapter refuses to run if a file does not match (PRD 12.5/12.6). Regenerate deliberately via scripts/gen_template_manifest.sh after review.",
+  "_comment": "Immutable reviewed Nuclei template allowlist. sha256 of each file; the adapter refuses to run if a file does not match (PRD 12.5/12.7). Regenerate deliberately via scripts/gen_template_manifest.sh after review.",
   "templates": {
     "apache-default-page.yaml": "20a41eccdb4a341ec9e293011e5740c555893548ee65c6f527f287896d9f244e",
     "basic-auth-exposed.yaml": "7608c23d9af1eb49941633d869f0b6e1f42e6b05ebf42c1aa5e25b758c34dcc4",

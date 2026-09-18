@@ -165,12 +165,16 @@ access can still rewrite history, but not without the verifier noticing.
 
 ### Scanner tools
 
-Subfinder, dnsx, ProjectDiscovery httpx (installed as `httpx-pd`), Nmap and Nuclei are
-pinned to exact versions and verified against the publisher's checksums **at image build
-time**. The application never downloads a tool or a template at runtime
+Subfinder, dnsx, ProjectDiscovery httpx (installed as `httpx-pd`), katana, Nmap and Nuclei
+are pinned to exact versions and verified against the publisher's checksums **at image
+build time**. The application never downloads a tool or a template at runtime
 (`-disable-update-check` / `-duc`). The Nuclei template set is an immutable allowlist with a
 content-hash manifest that is validated during the build. `SCANNER_MODE=fake` swaps in
 deterministic stub adapters for offline development and testing.
+
+For active profiles, katana does a bounded crawl (depth 1 for Safe, 2 for Standard; capped
+pages and time budget; no headless/browser execution) of the web hosts httpx already
+probed, feeding newly discovered endpoints to that same scan's Nuclei stage.
 
 SYN scan and OS detection require raw-packet capability and stay **disabled** until
 `TRASHSCAN_ALLOW_RAW_PACKET=true` *and* the `worker` service is granted `NET_RAW`.
@@ -305,7 +309,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**146 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**150 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution

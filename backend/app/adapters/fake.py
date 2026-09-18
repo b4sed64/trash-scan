@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+from urllib.parse import urlparse
 
 from .base import (
     CLASSIFICATION_ACTIVE,
     CLASSIFICATION_PASSIVE,
     STAGE_DNSX,
     STAGE_HTTPX,
+    STAGE_KATANA,
     STAGE_NMAP,
     STAGE_NUCLEI,
     STAGE_OSINT,
@@ -34,6 +36,15 @@ FAKE_VERSION = "fake/2.0.0"
 
 def _octet(seed: str, salt: str) -> int:
     return hashlib.sha256(f"{seed}:{salt}".encode()).digest()[0] % 254 + 1
+
+
+def _probe_host(probe: str) -> str:
+    """A probe is usually a bare ``ip[:port]`` (seeded by nmap), but katana can
+    add full URLs (``http://ip:port/path``) to the same pool — extract the host
+    correctly either way, the same as a real httpx/nuclei invocation would."""
+    if "://" in probe:
+        return urlparse(probe).hostname or probe
+    return probe.split(":")[0]
 
 
 class FakeSubfinderAdapter:
@@ -152,19 +163,19 @@ class FakeHttpxAdapter:
             out.note = "no approved hosts to probe"
             return out
         for probe in probes:
+            host = _probe_host(probe)
             out.observations.append(DiscoveredObservation(
                 kind="HTTP_STATUS", key=f"http://{probe}", value="200", source="httpx",
-                asset_value=probe.split(":")[0],
+                asset_value=host,
             ))
             out.observations.append(DiscoveredObservation(
                 kind="TITLE", key=probe, value="Lab service", source="httpx",
-                asset_value=probe.split(":")[0],
+                asset_value=host,
             ))
             out.observations.append(DiscoveredObservation(
                 kind="HTTP_HEADER", key="Server", value="nginx/1.25.0", source="httpx",
-                asset_value=probe.split(":")[0],
+                asset_value=host,
             ))
-            host = probe.split(":")[0]
             tls = {
                 "port": "443", "tls_version": "tls12", "cipher": "TLS_AES_128_GCM_SHA256",
                 "subject_cn": host, "issuer_cn": "Lab Internal CA",
@@ -187,6 +198,30 @@ class FakeHttpxAdapter:
         return out
 
 
+class FakeKatanaAdapter:
+    stage = STAGE_KATANA
+    classification = CLASSIFICATION_ACTIVE
+
+    def tool_version(self) -> str:
+        return FAKE_VERSION
+
+    def run(self, inp: StageInput) -> StageOutput:
+        out = StageOutput(stage=self.stage, ok=True, tool="katana", tool_version=FAKE_VERSION,
+                          args=["-fake", "-depth", "1", "-js-crawl"])
+        probes = sorted({h for h in inp.hosts if h})
+        if not probes:
+            out.note = "no approved hosts to crawl"
+            return out
+        for probe in probes:
+            host = probe.split(":")[0]
+            for path in ("/login", "/api/v1/status"):
+                out.observations.append(DiscoveredObservation(
+                    kind="TECH", key="endpoint", value=f"http://{probe}{path}",
+                    source="katana", asset_value=host,
+                ))
+        return out
+
+
 class FakeNucleiAdapter:
     stage = STAGE_NUCLEI
     classification = CLASSIFICATION_ACTIVE
@@ -204,7 +239,8 @@ class FakeNucleiAdapter:
         # A deterministic mix so comparison logic can be demonstrated.
         drop = str(inp.options.get("_fake_findings_drop") or "")
         for probe in probes:
-            host = probe.split(":")[0]
+            host = _probe_host(probe)
+            probe_url = probe if "://" in probe else f"http://{probe}/"
             catalogue = [
                 ("trashscan-missing-security-headers", "LOW", "Missing HTTP Security Headers",
                  "x-frame-options,content-security-policy"),
@@ -229,9 +265,9 @@ class FakeNucleiAdapter:
                     continue
                 out.findings.append(DiscoveredFinding(
                     rule_id=rule_id, template_hash=f"fake-{rule_id}", severity=sev, name=name,
-                    description=name, asset_value=host, matched_at=f"http://{probe}/",
+                    description=name, asset_value=host, matched_at=probe_url,
                     matcher_name="word", port=80, protocol="tcp",
-                    evidence_key=f"{rule_id}|word|{ev}", evidence_summary=f"{name} at http://{probe}/",
+                    evidence_key=f"{rule_id}|word|{ev}", evidence_summary=f"{name} at {probe_url}",
                     evidence={"extracted": [ev]},
                 ))
         return out

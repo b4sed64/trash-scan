@@ -67,9 +67,16 @@ class Settings(BaseSettings):
     max_runtime_minutes: int = 120
     cancel_grace_seconds: int = 10
 
-    # SYN scan + OS detection need raw-packet capability. Off until the
-    # Phase 0 spike proves the minimum Docker capability (PRD §19.1 / §28).
+    # SYN scan, OS detection, and UDP scan all need raw-packet capability. Off
+    # until the Phase 0 spike proves the minimum Docker capability (PRD §19.1 / §28).
     allow_raw_packet: bool = False
+
+    # UDP scan (Standard active only, same allow_raw_packet gate as SYN/OS
+    # detection) is scoped to a fixed, curated list of well-known business-network
+    # UDP services rather than a broad sweep — DNS, DHCP, TFTP, NTP, NetBIOS, SNMP,
+    # CLDAP, IPsec/ISAKMP, syslog, RIP, IPP, SSDP, IPsec NAT-T, mDNS — matching the
+    # same "fixed, product-bounded set" approach as the TCP port lists below.
+    standard_udp_ports: str = "53,67,68,69,123,137,138,161,162,389,500,514,520,631,1900,4500,5353"
 
     # External OSINT lookups (crt.sh Certificate Transparency, WHOIS/RDAP) send
     # the target domain to a third-party public service at scan time — a

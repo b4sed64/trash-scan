@@ -36,6 +36,7 @@ class Profile:
     nmap_syn: bool          # requires raw packet capability
     nmap_os_detection: bool  # requires raw packet capability
     nmap_nse_scripts: bool  # fixed safe/discovery NSE allowlist — see adapters/nmap.py
+    nmap_udp_scan: bool     # requires raw packet capability — see adapters/nmap.py
     description: str
 
 
@@ -44,14 +45,14 @@ PROFILES: dict[str, Profile] = {
         name=PASSIVE, classification="PASSIVE",
         stages=(STAGE_SUBFINDER, STAGE_OSINT, STAGE_DNSX),
         nmap_service_detection=False, nmap_syn=False, nmap_os_detection=False,
-        nmap_nse_scripts=False,
+        nmap_nse_scripts=False, nmap_udp_scan=False,
         description="Public OSINT, passive subdomains, DNS resolution. No approval required.",
     ),
     SAFE_ACTIVE: Profile(
         name=SAFE_ACTIVE, classification="ACTIVE",
         stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=False, nmap_os_detection=False,
-        nmap_nse_scripts=True,
+        nmap_nse_scripts=True, nmap_udp_scan=False,
         description="TCP connect scan of common ports, light service metadata, safe SMB/LDAP/RDP/TLS "
                     "configuration-disclosure NSE scripts, HTTP inspection, a shallow bounded "
                     "crawl of discovered web hosts, and reviewed low-impact Nuclei templates.",
@@ -60,12 +61,12 @@ PROFILES: dict[str, Profile] = {
         name=STANDARD_ACTIVE, classification="ACTIVE",
         stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=True, nmap_os_detection=True,
-        nmap_nse_scripts=True,
+        nmap_nse_scripts=True, nmap_udp_scan=True,
         description=(
             "Broader TCP port set, service/version detection, safe SMB/LDAP/RDP/TLS "
             "configuration-disclosure NSE scripts, HTTP inspection, a deeper bounded crawl of "
-            "discovered web hosts. SYN scan and OS detection only where raw-packet capability "
-            "is available."
+            "discovered web hosts. SYN scan, OS detection, and a fixed UDP port set (enabling "
+            "SNMP/NetBIOS NSE scripts) only where raw-packet capability is available."
         ),
     ),
 }

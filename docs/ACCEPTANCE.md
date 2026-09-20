@@ -1,7 +1,7 @@
 # MVP acceptance criteria (PRD §24)
 
 Each criterion mapped to where it is implemented and demonstrated. "Test" refers to
-`backend/tests/`; run the full suite (172 tests) with `docker run --rm trashscan-api pytest`.
+`backend/tests/`; run the full suite (180 tests) with `docker run --rm trashscan-api pytest`.
 Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any verdict below.
 
 | # | Criterion | Status | Evidence |
@@ -14,7 +14,7 @@ Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any v
 | 6 | A started scan may continue after approval expiry but is terminated at its two-hour runtime limit | ✅ | `test_active_workflow.py::test_runtime_cap_times_out_running_scan`; runtime deadline measured from `RUNNING`, independent of approval |
 | 7 | Every scheduled active occurrence pauses until separately approved | ✅ | `schedule_service.tick` creates `AWAITING_APPROVAL` + `ScanApproval`, never auto-runs; `test_schedules.py` |
 | 8 | Safe and Standard profiles invoke only product-approved options and tools | ✅ | `app/scan_profiles.py` fixed argument allowlist; adapters build argv arrays only; `test_active_workflow.py` |
-| 9 | Standard supports SYN and OS detection where Docker Desktop and the lab network permit raw packets | ⚠️ gated | `nmap.py` adds `-sS`/`-O` only when `TRASHSCAN_ALLOW_RAW_PACKET=1`; disabled by default pending the Phase 0 spike (documented in `PHASE3_STATUS.md`) |
+| 9 | Standard supports SYN and OS detection where Docker Desktop and the lab network permit raw packets | ⚠️ gated | `nmap.py` adds `-sS`/`-O` (and, post-MVP, `-sU` for a fixed UDP port set) only when `TRASHSCAN_ALLOW_RAW_PACKET=1`; disabled by default pending the Phase 0 spike (documented in `PHASE3_STATUS.md`) |
 | 10 | Out-of-scope IPs and configured government/military/healthcare deny rules reject execution before tool launch | ✅ | `test_scope_service.py`, `test_api_authorization.py::test_deny_rule_blocks_target_creation`, `test_scan_targeting.py::test_typed_value_hitting_a_deny_rule_is_rejected`; worker `SCAN_SCOPE_RECHECK_FAILED` before any tool |
 | 11 | DNS results and redirects are rechecked and cannot expand scope automatically | ✅ | `test_active_workflow.py::test_scope_recheck_blocks_launch_when_domain_leaves_scope`; `test_scope_service.py::test_dns_rebinding_split_answer_denied`; httpx does not follow redirects |
 | 12 | DNS wordlist enumeration and every prohibited testing category are absent from routes, UI, worker parameters, and defaults | ✅ | dnsx adapter never passes `-w`/brute flags; Nuclei `-exclude-tags fuzz,dos,intrusive,brute-force,rce,sqli,xss,oast`; no such routes/controls exist |

@@ -55,7 +55,8 @@ The first release will not include:
 - Multi-tenant organizations, commercial scanning APIs, cloud-hosted SaaS operation, or mobile applications.
 - Automated remediation or automatic claims that a finding has been resolved.
 - OWASP Amass, because its first-release use cases overlap with the chosen discovery tools.
-- IPv6 scanning, UDP scanning, screenshots, authenticated checks, or user-authored Nuclei templates.
+- IPv6 scanning, screenshots, authenticated checks, or user-authored Nuclei templates. (UDP
+  scanning was originally out of scope here but was later delivered, narrowly — see §12.1.)
 
 ## 5. Users and permissions
 
@@ -169,7 +170,9 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - Broader administrator-defined TCP port set.
 - TCP SYN scan.
 - Service/version detection.
-- The same NSE allowlist as Safe active.
+- The same NSE allowlist as Safe active, plus `snmp-sysdescr`/`nbstat` (need UDP scanning).
+- A fixed, curated UDP port set enabling the SNMP/NetBIOS scripts above — gated by the same
+  raw-packet capability as SYN scan/OS detection, never a broad UDP sweep.
 - OS detection with confidence and environment limitations.
 - HTTP inspection.
 - A deeper, still-bounded crawl of discovered web hosts (katana), same as Safe active.
@@ -341,6 +344,8 @@ The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDis
 - TCP SYN scanning in the Standard profile.
 - Service and version estimation.
 - Operating-system estimation with confidence and limitations.
+- UDP scanning, in the Standard profile only, scoped to a fixed curated port list — never a
+  broad/arbitrary UDP sweep — specifically to enable the SNMP/NetBIOS NSE scripts below.
 - Machine-readable XML output for ingestion.
 
 **Restrictions**
@@ -349,15 +354,27 @@ The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDis
 - No user-supplied arbitrary command flags.
 - No NSE script except scripts on an Administrator-reviewed allowlist.
 - No credential, brute-force, exploit, intrusive, or denial-of-service NSE categories.
-- UDP scanning is deferred.
+- UDP scanning requires the same raw-packet capability gate as SYN scan/OS detection
+  (`TRASHSCAN_ALLOW_RAW_PACKET` + `NET_RAW`) and is Standard-active only.
 
-**Implementation status (living):** Delivered. The Administrator-reviewed allowlist is
+**Implementation status (living):** Delivered. The Administrator-reviewed NSE allowlist is
 `smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`,
-`ssl-cert`, `smb-protocols` — all Nmap-categorized `safe`/`discovery`/`default`, run in the
-Safe and Standard active profiles via an exact `--script` name list, never a category or
-wildcard. See `docs/POST_MVP.md` for why `ssl-enum-ciphers` was considered and excluded
-(Nmap categorizes it `intrusive`), and why SNMP discovery and `nbstat` were not added
-(both require UDP scanning, which this section defers).
+`ssl-cert`, `smb-protocols`, `snmp-sysdescr`, `nbstat` — all Nmap-categorized
+`safe`/`discovery`/`default`, run via an exact `--script` name list, never a category or
+wildcard. `snmp-sysdescr` and `nbstat` need a UDP port open, so they are only ever added to
+`--script` when UDP scanning itself is enabled (see below); the other six run in both Safe
+and Standard. See `docs/POST_MVP.md` for why `ssl-enum-ciphers` was considered and excluded
+(Nmap categorizes it `intrusive`).
+
+UDP scanning (Standard active, gated by `TRASHSCAN_ALLOW_RAW_PACKET`) is scoped to
+`TRASHSCAN_STANDARD_UDP_PORTS` (default: DNS, DHCP, TFTP, NTP, NetBIOS, SNMP, CLDAP, IPsec,
+syslog, RIP, IPP, SSDP, mDNS) — a fixed, curated set, the same "product-bounded list, never
+a raw flag" approach as the TCP port sets. `snmp-sysdescr` queries a device's SNMP agent
+using the well-known default `public` read-only community string; Nmap's own `nselib/snmp.lua`
+only ever tries that one default (`o.community = community or "public"`), never a list, so
+this is a single default-credential check — the same category as an anonymous LDAP bind —
+not a credential-guessing campaign, and is treated as such rather than excluded under the
+"no credential" restriction above.
 
 ### 12.2 Subfinder
 
@@ -929,8 +946,11 @@ Tests must use systems owned by the team inside the authorized lab.
 - External notifications.
 - SSO, MFA, and multi-team tenancy.
 - Automated public-target ownership verification and authorization-document uploads.
-- UDP scanning, screenshots, and authenticated checks. (SNMP discovery and NetBIOS `nbstat`
-  were considered post-MVP but need UDP scan support first — see `docs/POST_MVP.md`.)
+- ~~UDP scanning~~ — delivered post-MVP, narrowly: Standard active only, gated by the same
+  raw-packet capability as SYN scan/OS detection, scoped to a fixed curated port list
+  specifically to enable `snmp-sysdescr`/`nbstat` (§12.1, §25 Phase 6). Still deferred:
+  general/broad UDP service discovery beyond that curated list.
+- Screenshots and authenticated checks.
 - ~~Broader OSINT providers~~ — partially delivered post-MVP: crt.sh Certificate
   Transparency and WHOIS/RDAP domain registration lookups (§25 Phase 6), off by
   default (`TRASHSCAN_ENABLE_EXTERNAL_OSINT`). Still deferred: any provider beyond

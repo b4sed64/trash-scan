@@ -7,9 +7,13 @@ Hard restrictions enforced here:
     category or wildcard selection, and never a credential, brute-force,
     exploit, intrusive, or denial-of-service script;
   * no user-supplied flags — every argument comes from the profile + config;
-  * SYN scan (``-sS``) and OS detection (``-O``) are only added when
-    ``allow_raw_packet`` is enabled; otherwise a TCP connect scan (``-sT``) is
-    used and OS detection is skipped.
+  * SYN scan (``-sS``), OS detection (``-O``), and UDP scan (``-sU``) are only
+    added when ``allow_raw_packet`` is enabled; otherwise a TCP connect scan
+    (``-sT``) is used, OS detection is skipped, and no UDP ports are scanned.
+  * UDP scanning (Standard active only) is a fixed, curated port list
+    (``settings.standard_udp_ports``), never a broad/arbitrary sweep, and exists
+    specifically to let ``snmp-sysdescr``/``nbstat`` run — not general UDP
+    service discovery.
   * targets are the pre-resolved in-scope IPs, never a hostname.
 
 ``smb2-security-mode``/``smb-security-mode`` report whether SMB message signing
@@ -17,13 +21,20 @@ is enforced; ``ldap-rootdse`` reads the anonymously-queryable LDAP root DSE;
 ``rdp-enum-encryption`` reports which RDP security layers a host offers;
 ``ssl-cert`` reads a certificate's validity period on non-HTTP TLS services
 (LDAPS, SMTP-STARTTLS, RDP-over-TLS — httpx's ``-tls-grab`` only ever sees
-HTTP(S)); ``smb-protocols`` lists which SMB dialects a server accepts. All six
-are Nmap-categorized ``safe``/``discovery``/``default`` with no exception
-needed. ``smb_signing_finding``, ``ssl_cert_findings``, and
-``smb_protocols_finding`` turn their scripts' output into actionable findings
-the same way ``httpx.tls_findings`` does for TLS; ``ldap-rootdse`` and
-``rdp-enum-encryption`` surface as observations only, since their output
-format isn't stable enough to key a severity-ranked rule off with confidence.
+HTTP(S)); ``smb-protocols`` lists which SMB dialects a server accepts;
+``snmp-sysdescr`` reads system info over SNMP using the default ``public``
+read-only community string (nmap's own ``nselib/snmp.lua`` only ever tries
+that one well-known default, never a list — a single default-credential
+check, the same category as an anonymous LDAP bind, not a guessing
+campaign); ``nbstat`` reads a host's self-announced NetBIOS name/user/MAC.
+All eight are Nmap-categorized ``safe``/``discovery``/``default`` with no
+exception needed. ``smb_signing_finding``, ``ssl_cert_findings``,
+``smb_protocols_finding``, and ``snmp_public_finding`` turn their scripts'
+output into actionable findings the same way ``httpx.tls_findings`` does for
+TLS; ``ldap-rootdse``, ``rdp-enum-encryption``, and ``nbstat`` surface as
+observations only, since their output is asset-identification data rather
+than a posture verdict, or isn't stable enough to key a severity-ranked rule
+off with confidence.
 """
 from __future__ import annotations
 
@@ -58,8 +69,13 @@ _WEBBISH = {"http", "https", "http-alt", "https-alt", "http-proxy", "ssl/http"}
 # selected, it never selects one on its own.
 NSE_SCRIPTS = frozenset({
     "smb2-security-mode", "smb-security-mode", "ldap-rootdse", "rdp-enum-encryption",
-    "ssl-cert", "smb-protocols",
+    "ssl-cert", "smb-protocols", "snmp-sysdescr", "nbstat",
 })
+# snmp-sysdescr/nbstat both need UDP ports open (SNMP/161, NetBIOS/137), so
+# they are only ever added to --script when the UDP scan itself is enabled
+# (Standard active + allow_raw_packet) — never requested, and so never run,
+# otherwise.
+_UDP_ONLY_SCRIPTS = frozenset({"snmp-sysdescr", "nbstat"})
 _SIGNING_SCRIPTS = {"smb2-security-mode", "smb-security-mode"}
 _EXPIRING_SOON_DAYS = 30
 _NOT_VALID_AFTER_RE = re.compile(r"Not valid after:\s*([0-9T:\-]+)")
@@ -162,6 +178,30 @@ def smb_protocols_finding(output: str, host: str) -> DiscoveredFinding | None:
     )
 
 
+def snmp_public_finding(output: str, host: str) -> DiscoveredFinding | None:
+    """snmp-sysdescr succeeding at all means the SNMP agent accepted the
+    well-known default "public" read-only community string — nmap's snmp
+    library only ever tries that one default, never a list (verified against
+    nselib/snmp.lua's ``o.community = community or "public"``), so this is a
+    single default-credential check, not a guessing campaign."""
+    text = (output or "").strip()
+    if not text:
+        return None
+    return DiscoveredFinding(
+        rule_id="snmp-public-community-exposed",
+        template_hash=_rule_hash("snmp-public-community-exposed"),
+        severity="MEDIUM", name="SNMP Public Community String Accepted",
+        description=(
+            "The SNMP agent accepted the default 'public' read-only community string, "
+            "disclosing system information without any real authentication."
+        ),
+        asset_value=host, matched_at=f"snmp://{host}:161", matcher_name="snmp-sysdescr",
+        port=161, protocol="udp",
+        evidence_key="snmp-public-community-exposed", evidence_summary=text[:400],
+        evidence={"script": "snmp-sysdescr", "output": text[:1000]},
+    )
+
+
 class NmapAdapter:
     stage = STAGE_NMAP
     classification = CLASSIFICATION_ACTIVE
@@ -175,6 +215,7 @@ class NmapAdapter:
         want_syn = bool(inp.options.get("syn"))
         want_os = bool(inp.options.get("os_detection"))
         want_service = bool(inp.options.get("service_detection", True))
+        want_udp = bool(inp.options.get("udp_scan")) and settings.allow_raw_packet
 
         scan_targets = list(inp.hosts) or ([inp.target_value] if inp.target_kind == "CIDR" else [])
         scan_targets = [t for t in scan_targets if _is_ip_or_cidr(t)]
@@ -185,20 +226,24 @@ class NmapAdapter:
         outfile = os.path.join(inp.result_dir, "nmap.xml")
         ports = str(inp.options.get("ports") or settings.ports_for_profile(inp.profile))
         timing = settings.timing_for_profile(inp.profile)
+        port_spec = f"T:{ports},U:{settings.standard_udp_ports}" if want_udp else ports
 
         argv = [BIN, "-oX", outfile, "-Pn", "-n", f"-{timing}", "--host-timeout", "1800s",
-                "--max-retries", "2", "-p", ports]
+                "--max-retries", "2", "-p", port_spec]
 
         if want_syn and settings.allow_raw_packet:
             argv.append("-sS")
         else:
             argv.append("-sT")
+        if want_udp:
+            argv.append("-sU")
         if want_service:
             argv += ["-sV", "--version-intensity", "2"]
         if want_os and settings.allow_raw_packet:
             argv += ["-O", "--osscan-limit"]
         if inp.options.get("nse_scripts"):
-            argv += ["--script", ",".join(sorted(NSE_SCRIPTS)), "--script-timeout", "30s"]
+            scripts = NSE_SCRIPTS if want_udp else (NSE_SCRIPTS - _UDP_ONLY_SCRIPTS)
+            argv += ["--script", ",".join(sorted(scripts)), "--script-timeout", "30s"]
 
         argv += scan_targets
         out.args = argv[1:]
@@ -270,6 +315,9 @@ def _findings_for_script(script_id: str, output: str, host: str, port: int | Non
         return ssl_cert_findings(output, host, port)
     if script_id == "smb-protocols":
         f = smb_protocols_finding(output, host)
+        return [f] if f else []
+    if script_id == "snmp-sysdescr":
+        f = snmp_public_finding(output, host)
         return [f] if f else []
     return []
 

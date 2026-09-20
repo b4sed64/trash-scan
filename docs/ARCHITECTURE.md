@@ -109,7 +109,7 @@ each stage's argv is assembled from product-defined options only.
 |---|---|---|---|
 | `PASSIVE` | passive | `subfinder` → `osint` → `dnsx` | Public OSINT + DNS resolution. No approval. `subfinder` runs only for DOMAIN targets; `osint` (crt.sh/RDAP) is a no-op unless `TRASHSCAN_ENABLE_EXTERNAL_OSINT=true`. Positioned before `dnsx` so any subdomains it discovers still get resolved. `dnsx` also PTR-sweeps a CIDR target here — pure DNS, no packet to the swept hosts. |
 | `SAFE_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Nmap **TCP-connect**, service metadata, a fixed safe/discovery NSE allowlist (SMB signing/dialects, LDAP root DSE, RDP encryption, non-HTTP TLS cert expiry), HTTP inspection (incl. favicon hash), a shallow bounded crawl (depth 1) of discovered web hosts, low-impact reviewed Nuclei templates. |
-| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Broader port set, service/version detection, the same NSE allowlist, a deeper bounded crawl (depth 2). SYN scan + OS detection **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
+| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Broader port set, service/version detection, the same NSE allowlist plus `snmp-sysdescr`/`nbstat`, a deeper bounded crawl (depth 2). SYN scan, OS detection, and a fixed-port-list UDP scan **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
 
 Ports come from a built-in preset, an admin-defined named port set, and/or a typed list
 (validated, capped at 6000 ports). Nmap timing is a template (`T2`/`T3`) chosen from
@@ -214,16 +214,18 @@ stages. It stays in force until an admin clears it; only one can be active at a 
     `nuclei`, `httpx`, `dnsx`, `osint`, and `nmap` all participate.
 - **Findings are not Nuclei-only.** `httpx.py::tls_findings`, `dnsx.py::dns_posture_findings`,
   `osint.py::registration_expiry_finding`, and `nmap.py::smb_signing_finding` /
-  `ssl_cert_findings` / `smb_protocols_finding` are pure functions that turn data those
-  stages were already collecting into severity-ranked findings, the same shape as a
-  Nuclei match (stable `rule_id`, a synthesized `template_hash` standing in for a template
-  content hash, `evidence_key`/`evidence_summary`). httpx supplies TLS/certificate posture
-  for HTTP(S) (expired, expiring soon, self-signed, hostname mismatch, deprecated protocol)
-  plus a favicon hash observation; dnsx supplies SPF/DMARC/CAA posture for domain targets
-  and PTR-sweeps a CIDR target; osint supplies domain-registration-expiry (when enabled);
-  nmap's NSE allowlist supplies SMB signing-not-enforced, SMBv1-enabled, and TLS cert
-  expiry for the non-HTTP services httpx never probes (LDAPS, SMTP-STARTTLS,
-  RDP-over-TLS). All finding functions are imported by the fake adapters too, so offline
+  `ssl_cert_findings` / `smb_protocols_finding` / `snmp_public_finding` are pure functions
+  that turn data those stages were already collecting into severity-ranked findings, the
+  same shape as a Nuclei match (stable `rule_id`, a synthesized `template_hash` standing in
+  for a template content hash, `evidence_key`/`evidence_summary`). httpx supplies
+  TLS/certificate posture for HTTP(S) (expired, expiring soon, self-signed, hostname
+  mismatch, deprecated protocol) plus a favicon hash observation; dnsx supplies
+  SPF/DMARC/CAA posture for domain targets and PTR-sweeps a CIDR target; osint supplies
+  domain-registration-expiry (when enabled); nmap's NSE allowlist supplies SMB
+  signing-not-enforced, SMBv1-enabled, TLS cert expiry for the non-HTTP services httpx
+  never probes (LDAPS, SMTP-STARTTLS, RDP-over-TLS), and — Standard active with UDP
+  scanning enabled only — an SNMP agent accepting the default `public` community string.
+  All finding functions are imported by the fake adapters too, so offline
   runs and the test suite exercise the identical rule logic real scans use.
 
 ---

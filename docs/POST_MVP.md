@@ -283,19 +283,46 @@ shipped off by default, and one new pinned tool for broader crawling. See
     vendor end-of-life date, via Nuclei's `compare_versions()` DSL function against
     the same thresholds the upstream templates use). All `info` severity — detection,
     not a vulnerability by itself.
-  - **SNMP discovery and NetBIOS `nbstat` were requested but not built.** Both
-    require Nmap to do a UDP scan (SNMP listens on UDP/161; NetBIOS name queries
-    use UDP/137 — confirmed directly from Nmap's own `snmp-sysdescr.nse` portrule
-    and `nbstat.nse`'s own usage example, `nmap -sU --script nbstat.nse -p137`).
-    This adapter only ever runs `-sT`/`-sS` (TCP); UDP scanning is a PRD §12.1
-    deferred capability, not just an unimplemented flag, and adding it is a
-    materially bigger feature (a new scan mode, its own privilege/timing
-    questions) than "add another script name" — scoped out as its own future
-    PRD item rather than folded into this batch.
+  - **SNMP discovery and NetBIOS `nbstat` were requested but not built in this
+    round.** Both require Nmap to do a UDP scan (SNMP listens on UDP/161; NetBIOS
+    name queries use UDP/137 — confirmed directly from Nmap's own
+    `snmp-sysdescr.nse` portrule and `nbstat.nse`'s own usage example,
+    `nmap -sU --script nbstat.nse -p137`). This adapter only ever ran `-sT`/`-sS`
+    (TCP); UDP scanning was a PRD §12.1 deferred capability, not just an
+    unimplemented flag, and adding it was a materially bigger feature than "add
+    another script name" — scoped out as its own PRD item rather than folded
+    into that batch. **Delivered in the very next round, below.**
+- **UDP scanning (Standard active only) — un-defers the item above (PRD §12.1, §29).**
+  Reuses the exact same raw-packet gate as SYN scan/OS detection
+  (`TRASHSCAN_ALLOW_RAW_PACKET` + `NET_RAW`), so it inherits the same off-by-default,
+  Phase-0-spike-pending posture without needing a new flag. Scoped to a fixed,
+  curated port list (`TRASHSCAN_STANDARD_UDP_PORTS`, default: DNS/DHCP/TFTP/NTP/
+  NetBIOS/SNMP/CLDAP/IPsec/syslog/RIP/IPP/SSDP/mDNS) rather than a broad sweep —
+  the point was enabling two specific NSE scripts, not general UDP service
+  discovery (a design choice confirmed with the user rather than assumed: broader
+  curated list over a narrow 2-port one, Standard-only over both active profiles).
+  Nmap's combined port-spec syntax (`-p T:<tcp-ports>,U:<udp-ports>` plus `-sU`
+  alongside the existing `-sT`/`-sS`) does the actual work; verified directly
+  against the real binary that this syntax parses and that the privilege check
+  fires exactly like SYN scan's already does, before touching any code.
+  - `snmp-sysdescr` and `nbstat` added to the NSE allowlist, but only ever
+    included in `--script` when the UDP scan itself is enabled
+    (`nmap._UDP_ONLY_SCRIPTS`) — never requested, and so never run, without it.
+  - `snmp-sysdescr` queries a device over SNMP using the well-known default
+    `public` read-only community string. This was checked against Nmap's own
+    `nselib/snmp.lua` before adding: `o.community = community or "public"` — the
+    library only ever tries that one default, never a list, so this is a single
+    default-credential check (the same category as the already-approved anonymous
+    LDAP root DSE query), not a credential-guessing campaign. Its success alone
+    (any non-empty response) becomes a `snmp-public-community-exposed` MEDIUM
+    finding via the new `nmap.snmp_public_finding` pure function.
+  - `nbstat` (NetBIOS name/user/MAC disclosure) surfaces as an observation only,
+    matching the `ldap-rootdse`/`rdp-enum-encryption` precedent — it's
+    asset-identification data, not a posture verdict.
 
 ## Tests
 
-The suite is now **172 tests**. Post-MVP additions:
+The suite is now **180 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -308,7 +335,11 @@ real JSONL shape, profile wiring, and end-to-end through the fake pipeline), `te
 per-port `<script>` elements including rejection of any non-allowlisted script id; profile
 wiring; end-to-end through the fake pipeline), `test_recon_additions.py` (favicon-hash
 observation parsing and its absence when httpx reports no hash; PTR-sweep of a CIDR range
-through both the fake adapter directly and a full passive scan execution).
+through both the fake adapter directly and a full passive scan execution), `test_udp_scan.py`
+(the SNMP default-community finding rule; that `snmp-sysdescr`/`nbstat` are only ever added
+to `--script` when UDP scanning is enabled, checked directly against the real adapter's argv
+construction with a monkeypatched settings object, not just the fake pipeline; profile
+wiring; end-to-end through the fake pipeline).
 
 ## Concurrency fix
 

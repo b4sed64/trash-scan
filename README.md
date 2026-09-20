@@ -156,12 +156,15 @@ opt-in rather than on by default.
 
 Active profiles also run a fixed, Administrator-reviewed Nmap NSE allowlist —
 `smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`,
-`ssl-cert`, `smb-protocols` — all Nmap-categorized `safe`/`discovery`/`default`, invoked by
-exact script name only, never a category or wildcard. SMB signing posture
+`ssl-cert`, `smb-protocols`, plus `snmp-sysdescr`/`nbstat` in Standard active when UDP
+scanning is enabled — all Nmap-categorized `safe`/`discovery`/`default`, invoked by exact
+script name only, never a category or wildcard. SMB signing posture
 (`smb-signing-not-required`), certificate expiry on non-HTTP TLS services like LDAPS
-(`tls-cert-expired`/`tls-cert-expiring-soon`), and SMBv1 still being enabled
-(`smb1-enabled`) each become a severity-ranked finding; the LDAP root DSE and RDP
-encryption-negotiation results surface as observations for an analyst to review.
+(`tls-cert-expired`/`tls-cert-expiring-soon`), SMBv1 still being enabled (`smb1-enabled`),
+and an SNMP agent accepting the well-known default `public` community string
+(`snmp-public-community-exposed`) each become a severity-ranked finding; the LDAP root DSE,
+RDP encryption-negotiation, and NetBIOS name/user/MAC results surface as observations for
+an analyst to review.
 
 httpx also computes an mmh3 favicon hash (`-favicon`, the same technique Shodan's
 `http.favicon.hash` uses) for spotting a known product/CMS even when its version banner is
@@ -191,7 +194,9 @@ For active profiles, katana does a bounded crawl (depth 1 for Safe, 2 for Standa
 pages and time budget; no headless/browser execution) of the web hosts httpx already
 probed, feeding newly discovered endpoints to that same scan's Nuclei stage.
 
-SYN scan and OS detection require raw-packet capability and stay **disabled** until
+SYN scan, OS detection, and UDP scanning (Standard active only, scoped to a fixed curated
+port list — see [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — never a broad UDP sweep)
+all require raw-packet capability and stay **disabled** until
 `TRASHSCAN_ALLOW_RAW_PACKET=true` *and* the `worker` service is granted `NET_RAW`.
 
 More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
@@ -324,7 +329,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**172 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**180 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution

@@ -2,15 +2,28 @@
 
 Hard restrictions enforced here:
   * no spoofing, decoys, fragmentation or timing-evasion options;
-  * no NSE scripts;
+  * NSE scripts are limited to a fixed, Administrator-reviewed allowlist of
+    safe/discovery-only configuration-disclosure scripts (PRD §12.1) — never a
+    category or wildcard selection, and never a credential, brute-force,
+    exploit, intrusive, or denial-of-service script;
   * no user-supplied flags — every argument comes from the profile + config;
   * SYN scan (``-sS``) and OS detection (``-O``) are only added when
     ``allow_raw_packet`` is enabled; otherwise a TCP connect scan (``-sT``) is
     used and OS detection is skipped.
   * targets are the pre-resolved in-scope IPs, never a hostname.
+
+``smb2-security-mode``/``smb-security-mode`` report whether SMB message signing
+is enforced; ``ldap-rootdse`` reads the anonymously-queryable LDAP root DSE;
+``rdp-enum-encryption`` reports which RDP security layers a host offers. All
+four are Nmap-categorized ``safe``/``discovery``/``default`` with no exception
+needed. ``smb_signing_finding`` turns the signing scripts' output into an
+actionable finding the same way ``httpx.tls_findings`` does for TLS; the other
+two scripts surface as observations only, since their output format isn't
+stable enough to key a severity-ranked rule off with confidence.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 
 import defusedxml.ElementTree as ET
@@ -22,6 +35,7 @@ from ._exec import tool_version as _tool_version
 from .base import (
     CLASSIFICATION_ACTIVE,
     STAGE_NMAP,
+    DiscoveredFinding,
     DiscoveredObservation,
     DiscoveredService,
     StageInput,
@@ -30,6 +44,53 @@ from .base import (
 
 BIN = os.getenv("TRASHSCAN_NMAP_BIN", "nmap")
 _WEBBISH = {"http", "https", "http-alt", "https-alt", "http-proxy", "ssl/http"}
+
+# Fixed NSE allowlist — passed to ``--script`` by exact name only, never a
+# category or wildcard, so a script's own "dependencies" (e.g. smb-security-mode
+# lists smb-brute) can never cause Nmap to also schedule a brute-force script:
+# Nmap's dependency system only orders scripts that were *both* already
+# selected, it never selects one on its own.
+NSE_SCRIPTS = frozenset({
+    "smb2-security-mode", "smb-security-mode", "ldap-rootdse", "rdp-enum-encryption",
+})
+_SIGNING_SCRIPTS = {"smb2-security-mode", "smb-security-mode"}
+
+
+def _rule_hash(rule_id: str, version: str = "v1") -> str:
+    """A stable stand-in for a Nuclei template hash, for findings this adapter
+    derives itself rather than sourcing from a template."""
+    return hashlib.sha256(f"trashscan-internal-rule:{rule_id}:{version}".encode()).hexdigest()
+
+
+def smb_signing_finding(script_id: str, output: str, host: str) -> DiscoveredFinding | None:
+    """Classify smb2-security-mode/smb-security-mode output into a finding.
+
+    Nmap's own phrasing for this has been stable for years: the output always
+    contains the word "signing" plus one of "enabled and required" (best
+    practice — nothing to flag), "enabled but not required", or "disabled".
+    """
+    text = (output or "").lower()
+    if "signing" not in text:
+        return None
+    if "enabled and required" in text:
+        return None
+    if "disabled" in text:
+        severity, state = "MEDIUM", "disabled"
+    elif "not required" in text or "not supported" in text:
+        severity, state = "LOW", "not required"
+    else:
+        return None
+    return DiscoveredFinding(
+        rule_id="smb-signing-not-required", template_hash=_rule_hash("smb-signing-not-required"),
+        severity=severity, name="SMB Signing Not Enforced",
+        description=(
+            "The SMB server does not require message signing. Unsigned SMB traffic can be "
+            "tampered with or relayed by an attacker positioned on the network."
+        ),
+        asset_value=host, matched_at=f"smb://{host}", matcher_name=script_id,
+        evidence_key=f"{script_id}:signing:{state}", evidence_summary=(output or "").strip()[:400],
+        evidence={"script": script_id, "output": (output or "")[:1000]},
+    )
 
 
 class NmapAdapter:
@@ -67,6 +128,8 @@ class NmapAdapter:
             argv += ["-sV", "--version-intensity", "2"]
         if want_os and settings.allow_raw_packet:
             argv += ["-O", "--osscan-limit"]
+        if inp.options.get("nse_scripts"):
+            argv += ["--script", ",".join(sorted(NSE_SCRIPTS)), "--script-timeout", "30s"]
 
         argv += scan_targets
         out.args = argv[1:]
@@ -88,9 +151,10 @@ class NmapAdapter:
         out.incomplete = res.timed_out
 
         xml_text = _read(outfile) or res.stdout.decode("utf-8", errors="replace")
-        services, observations, parsed = _parse_xml(xml_text)
+        services, observations, findings, parsed = _parse_xml(xml_text)
         out.services = services
         out.observations = observations
+        out.findings = findings
         out.ok = parsed and res.returncode == 0
         if not parsed:
             out.incomplete = True
@@ -121,22 +185,31 @@ def _read(path: str) -> str | None:
     return None
 
 
-def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObservation], bool]:
+def _script_observation(script_id: str, output: str, host: str) -> DiscoveredObservation:
+    value = (output or "").strip().replace("\n", " ")
+    value = " ".join(value.split())[:400]
+    return DiscoveredObservation(
+        kind="NSE", key=script_id, value=value or "(no output)", source="nmap", asset_value=host,
+    )
+
+
+def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObservation], list[DiscoveredFinding], bool]:
     services: list[DiscoveredService] = []
     observations: list[DiscoveredObservation] = []
+    findings: list[DiscoveredFinding] = []
     if not text or "<nmaprun" not in text:
-        return services, observations, False
+        return services, observations, findings, False
     try:
         root = ET.fromstring(text)
     except ParseError:
         # Truncated output: salvage complete <host> blocks.
         cut = text.rfind("</host>")
         if cut == -1:
-            return services, observations, False
+            return services, observations, findings, False
         try:
             root = ET.fromstring(text[: cut + len("</host>")] + "</nmaprun>")
         except ParseError:
-            return services, observations, False
+            return services, observations, findings, False
 
     for host in root.findall("host"):
         addr = ""
@@ -168,6 +241,27 @@ def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObser
                         kind="TECH", key="web-port", value=f"{addr}:{p.get('portid')}",
                         source="nmap", asset_value=addr,
                     ))
+                for sc in p.findall("script"):
+                    sid = sc.get("id", "")
+                    if sid not in NSE_SCRIPTS:
+                        continue
+                    sout = sc.get("output", "")
+                    observations.append(_script_observation(sid, sout, addr))
+                    if sid in _SIGNING_SCRIPTS:
+                        f = smb_signing_finding(sid, sout, addr)
+                        if f:
+                            findings.append(f)
+        for hs in host.findall("hostscript"):
+            for sc in hs.findall("script"):
+                sid = sc.get("id", "")
+                if sid not in NSE_SCRIPTS:
+                    continue
+                sout = sc.get("output", "")
+                observations.append(_script_observation(sid, sout, addr))
+                if sid in _SIGNING_SCRIPTS:
+                    f = smb_signing_finding(sid, sout, addr)
+                    if f:
+                        findings.append(f)
         os_el = host.find("os")
         if os_el is not None:
             for m in os_el.findall("osmatch")[:2]:
@@ -176,4 +270,4 @@ def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObser
                     value=f"{m.get('name', '')} (accuracy {m.get('accuracy', '?')}%)",
                     source="nmap", asset_value=addr,
                 ))
-    return services, observations, True
+    return services, observations, findings, True

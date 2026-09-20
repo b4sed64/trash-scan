@@ -227,10 +227,33 @@ shipped off by default, and one new pinned tool for broader crawling. See
   probe pool, that produced a bogus host (`"http"`) and duplicate `Finding` rows
   for the same underlying host. Fixed with a shared `_probe_host()` helper that
   handles both shapes, matching how a real httpx/nuclei invocation would.
+- **Nmap NSE allowlist (PRD §12.1)** — the first Nmap capability beyond port/service/OS
+  scanning. Adds a fixed, four-script allowlist to the Safe and Standard active profiles:
+  `smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`, all
+  Nmap-categorized `safe`/`discovery`/`default` — no `intrusive`, `brute`, or `vuln`
+  category script is ever eligible. Passed to `--script` by exact comma-separated name
+  only, never a category or wildcard, so a script's own internal `dependencies` entry
+  (e.g. `smb-security-mode` depends on `smb-brute`, `ldap-rootdse` depends on
+  `ldap-brute`) can never cause Nmap to schedule the brute-force script too — Nmap's
+  scheduler only *orders* scripts that were both already selected, it never selects one
+  on its own. `smb2-security-mode`/`smb-security-mode` output is turned into a
+  severity-ranked `smb-signing-not-required` finding (MEDIUM when signing is disabled,
+  LOW when enabled but not enforced) via a new pure function, `nmap.smb_signing_finding`,
+  shared with the fake adapter the same way `httpx.tls_findings` is. `ldap-rootdse` and
+  `rdp-enum-encryption` surface as `NSE`-kind observations only — their output isn't
+  stable enough across environments to key a severity rule off with confidence, so no
+  finding rule was written for them rather than guessing one. `ssl-enum-ciphers` was
+  considered and dropped: Nmap itself categorizes it `intrusive`, which PRD §12.1
+  explicitly excludes; httpx's existing `-tls-grab` posture findings already cover
+  deprecated-protocol detection, so this isn't a coverage gap. `safe_active_ports`
+  gained `389`/`636` so the Safe profile actually has LDAP open to run `ldap-rootdse`
+  against (Standard's `1-1024` range already covered it). `services/comparison.py`'s
+  `_STAGE_FOR_TOOL` map gained an `nmap` entry so these findings participate in
+  NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED baseline comparison like every other tool's.
 
 ## Tests
 
-The suite is now **151 tests**. Post-MVP additions:
+The suite is now **161 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -238,7 +261,10 @@ observations and each stage's `stderr_excerpt`/`note`), `test_enrichment.py` (TL
 and SPF/DMARC/CAA finding rules, end to end through both scan classifications),
 `test_osint.py` (crt.sh/RDAP parsing, the off-by-default gate, and the injected-fetcher
 adapter path — fully offline), `test_katana.py` (endpoint parsing against katana's
-real JSONL shape, profile wiring, and end-to-end through the fake pipeline).
+real JSONL shape, profile wiring, and end-to-end through the fake pipeline), `test_nse.py`
+(SMB-signing rule logic, XML parsing of both `<hostscript>` and per-port `<script>`
+elements including rejection of any non-allowlisted script id, profile wiring, and
+end-to-end through the fake pipeline).
 
 ## Concurrency fix
 

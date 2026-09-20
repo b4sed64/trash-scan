@@ -35,6 +35,7 @@ class Profile:
     nmap_service_detection: bool
     nmap_syn: bool          # requires raw packet capability
     nmap_os_detection: bool  # requires raw packet capability
+    nmap_nse_scripts: bool  # fixed safe/discovery NSE allowlist — see adapters/nmap.py
     description: str
 
 
@@ -43,24 +44,28 @@ PROFILES: dict[str, Profile] = {
         name=PASSIVE, classification="PASSIVE",
         stages=(STAGE_SUBFINDER, STAGE_OSINT, STAGE_DNSX),
         nmap_service_detection=False, nmap_syn=False, nmap_os_detection=False,
+        nmap_nse_scripts=False,
         description="Public OSINT, passive subdomains, DNS resolution. No approval required.",
     ),
     SAFE_ACTIVE: Profile(
         name=SAFE_ACTIVE, classification="ACTIVE",
         stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=False, nmap_os_detection=False,
-        description="TCP connect scan of common ports, light service metadata, HTTP inspection, "
-                    "a shallow bounded crawl of discovered web hosts, and reviewed low-impact "
-                    "Nuclei templates.",
+        nmap_nse_scripts=True,
+        description="TCP connect scan of common ports, light service metadata, safe SMB/LDAP/RDP "
+                    "configuration-disclosure NSE scripts, HTTP inspection, a shallow bounded "
+                    "crawl of discovered web hosts, and reviewed low-impact Nuclei templates.",
     ),
     STANDARD_ACTIVE: Profile(
         name=STANDARD_ACTIVE, classification="ACTIVE",
         stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=True, nmap_os_detection=True,
+        nmap_nse_scripts=True,
         description=(
-            "Broader TCP port set, service/version detection, HTTP inspection, a deeper "
-            "bounded crawl of discovered web hosts. SYN scan and OS detection only where "
-            "raw-packet capability is available."
+            "Broader TCP port set, service/version detection, safe SMB/LDAP/RDP "
+            "configuration-disclosure NSE scripts, HTTP inspection, a deeper bounded crawl of "
+            "discovered web hosts. SYN scan and OS detection only where raw-packet capability "
+            "is available."
         ),
     ),
 }

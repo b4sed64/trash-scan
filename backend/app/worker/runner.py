@@ -206,6 +206,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         options["syn"] = profile.nmap_syn
         options["os_detection"] = profile.nmap_os_detection
         options["service_detection"] = profile.nmap_service_detection
+        options["nse_scripts"] = profile.nmap_nse_scripts
         options["ports"] = (ex_options or {}).get("ports")
         inp = StageInput(
             stage=stage_name, target_kind=target_kind, target_value=target_value,

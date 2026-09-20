@@ -52,7 +52,7 @@ class DiscoveredAsset:
 
 @dataclass(frozen=True)
 class DiscoveredObservation:
-    kind: str                 # DNS_RECORD | HTTP_HEADER | HTTP_STATUS | TLS | TECH | TITLE | OSINT
+    kind: str                 # DNS_RECORD | HTTP_HEADER | HTTP_STATUS | TLS | TECH | TITLE | OSINT | NSE
     key: str
     value: str
     source: str

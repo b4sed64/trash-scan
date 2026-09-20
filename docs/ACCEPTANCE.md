@@ -1,7 +1,7 @@
 # MVP acceptance criteria (PRD §24)
 
 Each criterion mapped to where it is implemented and demonstrated. "Test" refers to
-`backend/tests/`; run the full suite (151 tests) with `docker run --rm trashscan-api pytest`.
+`backend/tests/`; run the full suite (161 tests) with `docker run --rm trashscan-api pytest`.
 Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any verdict below.
 
 | # | Criterion | Status | Evidence |

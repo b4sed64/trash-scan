@@ -114,7 +114,7 @@ The scanner only ever invokes product-approved options — never a raw flag from
 | Variable | Default | Notes |
 |---|---|---|
 | `TRASHSCAN_ALLOW_RAW_PACKET` | `false` | Master switch for SYN scan + OS detection. Requires `cap_add: ["NET_RAW"]` on the `worker` service **and** a completed Phase 0 raw-packet spike. While `false`, Nmap runs TCP-connect only. |
-| `TRASHSCAN_SAFE_ACTIVE_PORTS` | `22,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443` | Default port set for `SAFE_ACTIVE`. |
+| `TRASHSCAN_SAFE_ACTIVE_PORTS` | `22,25,53,80,110,143,389,443,445,636,993,995,3306,3389,5432,8080,8443` | Default port set for `SAFE_ACTIVE`. |
 | `TRASHSCAN_STANDARD_ACTIVE_PORTS` | `1-1024,1433,1521,2049,2375,3000,3306,3389,5432,5900,5985,6379,8000,8080,8443,9200,11211,27017` | Default port set for `STANDARD_ACTIVE`. |
 | `TRASHSCAN_NMAP_TIMING_SAFE` | `T2` | Nmap timing template for `SAFE_ACTIVE` (chosen from product options, not a raw flag). |
 | `TRASHSCAN_NMAP_TIMING_STANDARD` | `T3` | Nmap timing template for `STANDARD_ACTIVE`. |

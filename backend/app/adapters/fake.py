@@ -29,6 +29,7 @@ from .base import (
 )
 from .dnsx import dns_posture_findings
 from .httpx import tls_findings
+from .nmap import smb_signing_finding
 from .osint import registration_expiry_finding
 
 FAKE_VERSION = "fake/2.0.0"
@@ -145,6 +146,41 @@ class FakeNmapAdapter:
                 kind="OSINT", key="os-guess", value="Linux 5.x (accuracy 90%)", source="nmap",
                 asset_value=ips[0],
             ))
+        if inp.options.get("nse_scripts"):
+            for ip in ips:
+                if (_octet(ip, "smb") % 3) == 0:
+                    out.services.append(DiscoveredService(
+                        asset_value=ip, port=445, protocol="tcp", state="open",
+                        product="Samba", version="4.x", confidence="10",
+                    ))
+                    signing = ("Message signing enabled but not required"
+                               if (_octet(ip, "smb-sign") % 2) == 0
+                               else "Message signing enabled and required")
+                    out.observations.append(DiscoveredObservation(
+                        kind="NSE", key="smb2-security-mode", value=signing, source="nmap",
+                        asset_value=ip,
+                    ))
+                    f = smb_signing_finding("smb2-security-mode", signing, ip)
+                    if f:
+                        out.findings.append(f)
+                if (_octet(ip, "ldap") % 4) == 0:
+                    out.services.append(DiscoveredService(
+                        asset_value=ip, port=389, protocol="tcp", state="open",
+                        product="OpenLDAP", version="2.x", confidence="10",
+                    ))
+                    out.observations.append(DiscoveredObservation(
+                        kind="NSE", key="ldap-rootdse",
+                        value="namingcontexts: dc=lab,dc=internal", source="nmap", asset_value=ip,
+                    ))
+                if (_octet(ip, "rdp") % 5) == 0:
+                    out.services.append(DiscoveredService(
+                        asset_value=ip, port=3389, protocol="tcp", state="open",
+                        product="Microsoft Terminal Services", version="", confidence="10",
+                    ))
+                    out.observations.append(DiscoveredObservation(
+                        kind="NSE", key="rdp-enum-encryption",
+                        value="Security layer: RDP, SSL, CredSSP", source="nmap", asset_value=ip,
+                    ))
         return out
 
 

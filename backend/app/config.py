@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     enable_external_osint: bool = False
 
     # Active-profile port sets (administrator-defined, product-bounded) --------
-    safe_active_ports: str = "22,25,53,80,110,143,443,445,993,995,3306,3389,5432,8080,8443"
+    safe_active_ports: str = "22,25,53,80,110,143,389,443,445,636,993,995,3306,3389,5432,8080,8443"
     standard_active_ports: str = (
         "1-1024,1433,1521,2049,2375,3000,3306,3389,5432,5900,5985,6379,8000,8080,8443,9200,11211,27017"
     )

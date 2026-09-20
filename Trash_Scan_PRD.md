@@ -156,6 +156,8 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - Common administrator-defined TCP ports.
 - Conservative connection and request rates.
 - Basic service metadata.
+- A fixed, Administrator-reviewed NSE allowlist (SMB signing, LDAP root DSE, RDP
+  encryption negotiation) — §12.1.
 - HTTP status, title, headers, TLS metadata, and technology detection.
 - A shallow, bounded crawl of discovered web hosts (katana) feeding additional
   in-scope endpoints to the Nuclei stage below.
@@ -167,6 +169,7 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - Broader administrator-defined TCP port set.
 - TCP SYN scan.
 - Service/version detection.
+- The same NSE allowlist as Safe active.
 - OS detection with confidence and environment limitations.
 - HTTP inspection.
 - A deeper, still-bounded crawl of discovered web hosts (katana), same as Safe active.
@@ -347,6 +350,12 @@ The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDis
 - No NSE script except scripts on an Administrator-reviewed allowlist.
 - No credential, brute-force, exploit, intrusive, or denial-of-service NSE categories.
 - UDP scanning is deferred.
+
+**Implementation status (living):** Delivered. The Administrator-reviewed allowlist is
+`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption` — all
+Nmap-categorized `safe`/`discovery`/`default`, run in the Safe and Standard active profiles
+via an exact `--script` name list, never a category or wildcard. See `docs/POST_MVP.md` for
+why `ssl-enum-ciphers` was considered and excluded (Nmap categorizes it `intrusive`).
 
 ### 12.2 Subfinder
 

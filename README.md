@@ -154,6 +154,13 @@ crt.sh (Certificate Transparency) for subdomains and RDAP for domain-registratio
 capability here that sends the target's domain to a third-party public service, so it's
 opt-in rather than on by default.
 
+Active profiles also run a fixed, Administrator-reviewed Nmap NSE allowlist —
+`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption` — all
+Nmap-categorized `safe`/`discovery`/`default`, invoked by exact script name only, never a
+category or wildcard. SMB signing posture becomes a severity-ranked finding
+(`smb-signing-not-required`); the LDAP root DSE and RDP encryption-negotiation results
+surface as observations for an analyst to review.
+
 ### Tamper-evident audit (`audit_service.py`)
 
 `AuditService.append` writes one row per security-relevant event, each carrying the SHA-256
@@ -167,7 +174,8 @@ access can still rewrite history, but not without the verifier noticing.
 
 Subfinder, dnsx, ProjectDiscovery httpx (installed as `httpx-pd`), katana, Nmap and Nuclei
 are pinned to exact versions and verified against the publisher's checksums **at image
-build time**. The application never downloads a tool or a template at runtime
+build time**. Nmap's own NSE scripts ship with the Debian package rather than being
+separately pinned; only the fixed allowlist above is ever invoked. The application never downloads a tool or a template at runtime
 (`-disable-update-check` / `-duc`). The Nuclei template set is an immutable allowlist with a
 content-hash manifest that is validated during the build. `SCANNER_MODE=fake` swaps in
 deterministic stub adapters for offline development and testing.
@@ -309,15 +317,15 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**151 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**161 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
 state machine and idempotency, one-scan-many-targets grouping, manual start / pause / stop,
 scheduling, the active-scan approval workflow (expired approval, replay, scope re-check,
-runtime timeout, emergency stop), tool-output parsers, TLS-posture, SPF/DMARC/CAA, and
-external-OSINT finding rules, finding fingerprints and baseline comparison, CSV formula
-neutralization + PDF
+runtime timeout, emergency stop), tool-output parsers, TLS-posture, SPF/DMARC/CAA,
+external-OSINT, and Nmap NSE (SMB signing/LDAP/RDP) finding rules, finding fingerprints and
+baseline comparison, CSV formula neutralization + PDF
 generation, retention, the maintenance workflow, port-spec validation, and the fake adapters.
 
 ## Everyday operations

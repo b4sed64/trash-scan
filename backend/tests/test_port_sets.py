@@ -26,6 +26,7 @@ def test_create_list_delete_port_set(admin):
            {"name": "Databases", "spec": " 1433, 3306 , 5432-5433 ", "note": "db ports"})
     assert r.status_code == 201
     assert r.json()["spec"] == "1433,3306,5432-5433"  # canonicalised
+    assert r.json()["protocol"] == "TCP"  # default when omitted
 
     listing = admin.get("/api/admin/port-sets").json()
     assert [p["name"] for p in listing] == ["Databases"]
@@ -33,12 +34,28 @@ def test_create_list_delete_port_set(admin):
     # exposed to the scan page alongside the built-in presets
     presets = admin.get("/api/scans/port-presets").json()
     assert "WEB" in presets["presets"]
-    assert any(ps["name"] == "Databases" for ps in presets["port_sets"])
+    assert any(ps["name"] == "Databases" and ps["protocol"] == "TCP"
+               for ps in presets["port_sets"])
 
     pid = listing[0]["id"]
     assert admin.delete(f"/api/admin/port-sets/{pid}",
                         headers={"X-CSRF-Token": _csrf(admin)}).status_code == 200
     assert admin.get("/api/admin/port-sets").json() == []
+
+
+def test_create_udp_port_set(admin):
+    r = _p(admin, "/api/admin/port-sets",
+           {"name": "SNMP Discovery", "protocol": "UDP", "spec": "161,162"})
+    assert r.status_code == 201
+    assert r.json()["protocol"] == "UDP"
+    presets = admin.get("/api/scans/port-presets").json()
+    assert any(ps["name"] == "SNMP Discovery" and ps["protocol"] == "UDP"
+               for ps in presets["port_sets"])
+
+
+def test_invalid_protocol_rejected(admin):
+    r = _p(admin, "/api/admin/port-sets", {"name": "Bad Protocol", "protocol": "ICMP", "spec": "80"})
+    assert r.status_code == 422
 
 
 def test_invalid_spec_rejected(admin):

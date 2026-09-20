@@ -97,6 +97,15 @@ export interface Asset {
   last_seen_at: string;
 }
 
+export interface PortSet {
+  id: string;
+  name: string;
+  protocol: "TCP" | "UDP";
+  spec: string;
+  note?: string;
+  created_at?: string;
+}
+
 export interface Target {
   id: string;
   kind: string;

@@ -171,8 +171,9 @@ Nmap SYN scanning is sometimes called a “stealth scan,” but Trash Scan will 
 - TCP SYN scan.
 - Service/version detection.
 - The same NSE allowlist as Safe active, plus `snmp-sysdescr`/`nbstat` (need UDP scanning).
-- A fixed, curated UDP port set enabling the SNMP/NetBIOS scripts above — gated by the same
-  raw-packet capability as SYN scan/OS detection, never a broad UDP sweep.
+- A fixed, curated default UDP port set enabling the SNMP/NetBIOS scripts above — gated by
+  the same raw-packet capability as SYN scan/OS detection, never a broad UDP sweep. An
+  administrator may define a named UDP port profile (§12.1) to use instead, for one scan.
 - OS detection with confidence and environment limitations.
 - HTTP inspection.
 - A deeper, still-bounded crawl of discovered web hosts (katana), same as Safe active.
@@ -366,10 +367,13 @@ wildcard. `snmp-sysdescr` and `nbstat` need a UDP port open, so they are only ev
 and Standard. See `docs/POST_MVP.md` for why `ssl-enum-ciphers` was considered and excluded
 (Nmap categorizes it `intrusive`).
 
-UDP scanning (Standard active, gated by `TRASHSCAN_ALLOW_RAW_PACKET`) is scoped to
+UDP scanning (Standard active, gated by `TRASHSCAN_ALLOW_RAW_PACKET`) is scoped by default to
 `TRASHSCAN_STANDARD_UDP_PORTS` (default: DNS, DHCP, TFTP, NTP, NetBIOS, SNMP, CLDAP, IPsec,
 syslog, RIP, IPP, SSDP, mDNS) — a fixed, curated set, the same "product-bounded list, never
-a raw flag" approach as the TCP port sets. `snmp-sysdescr` queries a device's SNMP agent
+a raw flag" approach as the TCP port sets. An administrator may instead define a named,
+protocol-tagged port profile (the Ports page; `PortSet.protocol`, `0008_port_set_protocol`) —
+`TCP` profiles behave exactly as before, a `UDP` profile replaces the default list above for
+one scan, still gated the same way and never a broad/arbitrary sweep. `snmp-sysdescr` queries a device's SNMP agent
 using the well-known default `public` read-only community string; Nmap's own `nselib/snmp.lua`
 only ever tries that one default (`o.community = community or "public"`), never a list, so
 this is a single default-credential check — the same category as an anonymous LDAP bind —

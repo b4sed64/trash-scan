@@ -226,7 +226,8 @@ class NmapAdapter:
         outfile = os.path.join(inp.result_dir, "nmap.xml")
         ports = str(inp.options.get("ports") or settings.ports_for_profile(inp.profile))
         timing = settings.timing_for_profile(inp.profile)
-        port_spec = f"T:{ports},U:{settings.standard_udp_ports}" if want_udp else ports
+        udp_ports = str(inp.options.get("udp_ports") or settings.standard_udp_ports)
+        port_spec = f"T:{ports},U:{udp_ports}" if want_udp else ports
 
         argv = [BIN, "-oX", outfile, "-Pn", "-n", f"-{timing}", "--host-timeout", "1800s",
                 "--max-retries", "2", "-p", port_spec]

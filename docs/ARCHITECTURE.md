@@ -109,11 +109,15 @@ each stage's argv is assembled from product-defined options only.
 |---|---|---|---|
 | `PASSIVE` | passive | `subfinder` → `osint` → `dnsx` | Public OSINT + DNS resolution. No approval. `subfinder` runs only for DOMAIN targets; `osint` (crt.sh/RDAP) is a no-op unless `TRASHSCAN_ENABLE_EXTERNAL_OSINT=true`. Positioned before `dnsx` so any subdomains it discovers still get resolved. `dnsx` also PTR-sweeps a CIDR target here — pure DNS, no packet to the swept hosts. |
 | `SAFE_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Nmap **TCP-connect**, service metadata, a fixed safe/discovery NSE allowlist (SMB signing/dialects, LDAP root DSE, RDP encryption, non-HTTP TLS cert expiry), HTTP inspection (incl. favicon hash), a shallow bounded crawl (depth 1) of discovered web hosts, low-impact reviewed Nuclei templates. |
-| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Broader port set, service/version detection, the same NSE allowlist plus `snmp-sysdescr`/`nbstat`, a deeper bounded crawl (depth 2). SYN scan, OS detection, and a fixed-port-list UDP scan **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
+| `STANDARD_ACTIVE` | active | `dnsx` → `nmap` → `httpx` → `katana` → `nuclei` | Broader port set, service/version detection, the same NSE allowlist plus `snmp-sysdescr`/`nbstat`, a deeper bounded crawl (depth 2). SYN scan, OS detection, and a UDP scan (default port list, or an administrator-defined UDP profile) **only** when `TRASHSCAN_ALLOW_RAW_PACKET=true` and `worker` has `NET_RAW`. |
 
-Ports come from a built-in preset, an admin-defined named port set, and/or a typed list
-(validated, capped at 6000 ports). Nmap timing is a template (`T2`/`T3`) chosen from
-product options, never a raw flag.
+TCP ports come from a built-in preset, an admin-defined named `PortSet` (`protocol="TCP"`),
+and/or a typed list (validated, capped at 6000 ports). UDP ports (Standard active only) come
+from `TRASHSCAN_STANDARD_UDP_PORTS` by default, or a `protocol="UDP"` `PortSet` chosen on the
+Ports/Scans pages (`ScanExecution.options["udp_ports"]`, consumed by `adapters/nmap.py`) — a
+set is one protocol or the other, never mixed, matching Nmap's own combined port-spec syntax
+(`-p T:...,U:...`). Nmap timing is a template (`T2`/`T3`) chosen from product options, never
+a raw flag.
 
 ### State machine (`services/execution_service.py`)
 

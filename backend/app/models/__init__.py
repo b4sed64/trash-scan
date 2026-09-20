@@ -72,12 +72,20 @@ class PrivateCidr(Base):
 
 
 class PortSet(Base):
-    """A reusable, administrator-defined named set of ports for active scans."""
+    """A reusable, administrator-defined named set of ports for active scans.
+
+    ``protocol`` is TCP or UDP — a set is one or the other, never mixed, matching
+    how Nmap's own combined port spec (``-p T:...,U:...``) keeps the two apart.
+    A UDP set is only usable by the Standard active profile with UDP scanning
+    enabled (PRD §12.1); it replaces the fixed ``TRASHSCAN_STANDARD_UDP_PORTS``
+    default for that scan when chosen.
+    """
 
     __tablename__ = "port_sets"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    protocol: Mapped[str] = mapped_column(String(3), nullable=False, default="TCP")
     spec: Mapped[str] = mapped_column(String(2000), nullable=False)
     note: Mapped[str] = mapped_column(String(256), default="")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

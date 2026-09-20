@@ -21,12 +21,6 @@ interface DenyRule {
   category: string;
   is_builtin: boolean;
 }
-interface PortSet {
-  id: string;
-  name: string;
-  spec: string;
-  note: string;
-}
 interface Maintenance {
   current: {
     tool_versions: Record<string, string>;
@@ -47,8 +41,6 @@ export function Admin() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cidrs, setCidrs] = useState<PrivateCidr[]>([]);
   const [denies, setDenies] = useState<DenyRule[]>([]);
-  const [portSets, setPortSets] = useState<PortSet[]>([]);
-  const [nps, setNps] = useState({ name: "", spec: "", note: "" });
   const [error, setError] = useState("");
 
   const [maint, setMaint] = useState<Maintenance | null>(null);
@@ -61,7 +53,6 @@ export function Admin() {
     setAccounts(await api.get<Account[]>("/api/admin/accounts"));
     setCidrs(await api.get<PrivateCidr[]>("/api/admin/private-cidrs"));
     setDenies(await api.get<DenyRule[]>("/api/admin/deny-rules"));
-    setPortSets(await api.get<PortSet[]>("/api/admin/port-sets").catch(() => []));
     setMaint(await api.get<Maintenance>("/api/admin/maintenance").catch(() => null));
   }
   useEffect(() => {
@@ -280,86 +271,6 @@ export function Admin() {
             </select>
           </div>
           <button type="submit">Add Deny Rule</button>
-        </form>
-      </section>
-
-      <section className="card">
-        <h3>Port Sets</h3>
-        <p className="notice">
-          Reusable named port selections. Scanners pick these on the Scans page for active
-          scans, alongside the built-in presets or a typed list.
-        </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Ports</th>
-              <th>Note</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {portSets.map((p) => (
-              <tr key={p.id}>
-                <td>{p.name}</td>
-                <td>
-                  <code>{p.spec}</code>
-                </td>
-                <td className="muted">{p.note}</td>
-                <td>
-                  <button
-                    className="secondary"
-                    onClick={wrap(() => api.del(`/api/admin/port-sets/${p.id}`))}
-                  >
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {portSets.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted">
-                  No port sets defined.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <form
-          className="row"
-          onSubmit={wrap(() =>
-            api.post("/api/admin/port-sets", nps).then(() => setNps({ name: "", spec: "", note: "" })),
-          )}
-        >
-          <div>
-            <label htmlFor="psn">Name</label>
-            <input
-              id="psn"
-              value={nps.name}
-              onChange={(e) => setNps({ ...nps, name: e.target.value })}
-              placeholder="Databases"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="pss">Ports (list and ranges)</label>
-            <input
-              id="pss"
-              value={nps.spec}
-              onChange={(e) => setNps({ ...nps, spec: e.target.value })}
-              placeholder="1433,1521,3306,5432,6379,27017"
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="psnote">Note</label>
-            <input
-              id="psnote"
-              value={nps.note}
-              onChange={(e) => setNps({ ...nps, note: e.target.value })}
-            />
-          </div>
-          <button type="submit">Add Port Set</button>
         </form>
       </section>
 

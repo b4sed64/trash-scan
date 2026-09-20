@@ -34,6 +34,7 @@ export function Layout({ children }: { children: ReactNode }) {
             Dashboard
           </NavLink>
           <NavLink to="/targets">Targets</NavLink>
+          <NavLink to="/ports">Ports</NavLink>
           <NavLink to="/scans">Scans</NavLink>
           {me?.role === "ADMINISTRATOR" && <NavLink to="/approvals">Approvals</NavLink>}
           <NavLink to="/audit">Logs</NavLink>

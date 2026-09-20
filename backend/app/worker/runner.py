@@ -215,6 +215,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         options["nse_scripts"] = profile.nmap_nse_scripts
         options["udp_scan"] = profile.nmap_udp_scan
         options["ports"] = (ex_options or {}).get("ports")
+        options["udp_ports"] = (ex_options or {}).get("udp_ports")
         inp = StageInput(
             stage=stage_name, target_kind=target_kind, target_value=target_value,
             profile=profile_name, hosts=hosts, options=options, limits=limits,

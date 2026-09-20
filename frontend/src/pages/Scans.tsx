@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, EmergencyStopStatus, Execution, ScanGroup, Target } from "../api";
+import { api, ApiError, EmergencyStopStatus, Execution, PortSet, ScanGroup, Target } from "../api";
 import { useAuth } from "../auth";
 import { MultiSelect, Option } from "../components/MultiSelect";
 import { PauseIcon, PlayIcon, StopIcon } from "../components/icons";
@@ -25,7 +25,7 @@ const BUILTIN_PRESET_LABELS: Record<string, string> = {
 
 interface PortPresets {
   presets: Record<string, string>;
-  port_sets: { id: string; name: string; spec: string }[];
+  port_sets: PortSet[];
 }
 
 export function stateBadge(state: string): string {
@@ -56,6 +56,8 @@ export function Scans() {
   const [rate, setRate] = useState("CONSERVATIVE");
   const [pickedPorts, setPickedPorts] = useState<string[]>([]);
   const [customPorts, setCustomPorts] = useState("");
+  const [pickedUdpPorts, setPickedUdpPorts] = useState<string[]>([]);
+  const [customUdpPorts, setCustomUdpPorts] = useState("");
   const [attestation, setAttestation] = useState("");
 
   const load = useCallback(async () => {
@@ -81,10 +83,20 @@ export function Scans() {
   }, [load, scans]);
 
   const isActive = profile !== "PASSIVE";
+  const isStandardActive = profile === "STANDARD_ACTIVE";
 
   const targetOptions: Option[] = targets
     .filter((t) => t.is_active)
     .map((t) => ({ value: t.id, label: t.value, hint: t.kind }));
+
+  const tcpPortSets = useMemo(
+    () => portData.port_sets.filter((p) => p.protocol !== "UDP"),
+    [portData],
+  );
+  const udpPortSets = useMemo(
+    () => portData.port_sets.filter((p) => p.protocol === "UDP"),
+    [portData],
+  );
 
   const portOptions: Option[] = useMemo(() => {
     const opts: Option[] = [];
@@ -92,11 +104,16 @@ export function Scans() {
       if (portData.presets[key])
         opts.push({ value: `preset:${key}`, label: BUILTIN_PRESET_LABELS[key], hint: portData.presets[key] });
     }
-    for (const ps of portData.port_sets) {
+    for (const ps of tcpPortSets) {
       opts.push({ value: `set:${ps.id}`, label: ps.name, hint: ps.spec });
     }
     return opts;
-  }, [portData]);
+  }, [portData, tcpPortSets]);
+
+  const udpPortOptions: Option[] = useMemo(
+    () => udpPortSets.map((ps) => ({ value: `set:${ps.id}`, label: ps.name, hint: ps.spec })),
+    [udpPortSets],
+  );
 
   function specFor(value: string): string {
     if (value.startsWith("preset:")) return portData.presets[value.slice(7)] ?? "";
@@ -106,14 +123,17 @@ export function Scans() {
     return "";
   }
 
-  function composePorts(): string {
+  function compose(picked: string[], custom: string): string {
     const tokens = new Set<string>();
-    for (const v of pickedPorts) {
+    for (const v of picked) {
       for (const t of specFor(v).split(",")) if (t.trim()) tokens.add(t.trim());
     }
-    for (const t of customPorts.split(/[,\s]+/)) if (t.trim()) tokens.add(t.trim());
+    for (const t of custom.split(/[,\s]+/)) if (t.trim()) tokens.add(t.trim());
     return [...tokens].join(",");
   }
+
+  const composePorts = () => compose(pickedPorts, customPorts);
+  const composeUdpPorts = () => compose(pickedUdpPorts, customUdpPorts);
 
   async function submitScan(e: FormEvent) {
     e.preventDefault();
@@ -141,6 +161,10 @@ export function Scans() {
         body.ports = composed;
       } else {
         body.port_preset = "PROFILE_DEFAULT";
+      }
+      if (isStandardActive) {
+        const composedUdp = composeUdpPorts();
+        if (composedUdp) body.udp_ports = composedUdp;
       }
     }
     try {
@@ -191,6 +215,7 @@ export function Scans() {
   }
 
   const composedPreview = isActive ? composePorts() : "";
+  const composedUdpPreview = isStandardActive ? composeUdpPorts() : "";
 
   return (
     <div>
@@ -286,6 +311,34 @@ export function Scans() {
                 {composedPreview
                   ? `Will scan: ${composedPreview}`
                   : "Will use the profile's default port set."}
+              </p>
+            </div>
+          )}
+
+          {isStandardActive && (
+            <div style={{ marginTop: "0.7rem" }}>
+              <div className="row">
+                <MultiSelect
+                  label={`UDP Ports (${pickedUdpPorts.length} profile${pickedUdpPorts.length === 1 ? "" : "s"} selected)`}
+                  options={udpPortOptions}
+                  selected={pickedUdpPorts}
+                  onChange={setPickedUdpPorts}
+                  placeholder="Standard UDP Port List"
+                  emptyText="No UDP port profiles defined — see the Ports page."
+                />
+              </div>
+              <label htmlFor="cup">…and/or type UDP ports (e.g. 161,137,500)</label>
+              <input
+                id="cup"
+                value={customUdpPorts}
+                onChange={(e) => setCustomUdpPorts(e.target.value)}
+                placeholder="161,137,500"
+              />
+              <p className="muted" style={{ fontSize: "0.82rem" }}>
+                {composedUdpPreview
+                  ? `Will UDP-scan: ${composedUdpPreview}`
+                  : "Will use the administrator's default UDP port list."}{" "}
+                Only scanned at all when raw-packet capability is enabled.
               </p>
             </div>
           )}

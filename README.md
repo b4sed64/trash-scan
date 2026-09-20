@@ -57,10 +57,11 @@ network and **track how it changes** over time.
 |---|---|
 | **Dashboard** | KPI tiles, findings-by-severity, a severity-ranked threats table, your targets, reports/exports. |
 | **Targets** | Define targets (admin), assign scanners, preview scope, generate reports, schedule scans. |
+| **Ports** | Define reusable, named TCP or UDP port profiles (admin); visible to everyone so they can be picked on the Scans page alongside the built-in TCP presets, or in place of the default UDP port list for a Standard Active scan. |
 | **Scans** | Build a scan; Scan History with compact Start / Pause / Stop controls and a Review link to the scan detail page. |
 | **Approvals** (admin) | Approve or deny pending active scans; see recent decisions. |
 | **Logs** | The audit chain — filter by action, search by scan/object id, order ascending/descending, verify the chain. |
-| **Administration** (admin) | Accounts + password reset, private scope (allowed CIDRs), deny rules, reusable port sets, scanner tool/template maintenance. |
+| **Administration** (admin) | Accounts + password reset, private scope (allowed CIDRs), deny rules, scanner tool/template maintenance. |
 | **Your Account** | Change your own password. |
 
 Two roles: **ADMINISTRATOR** (full control) and **SCANNER** (works only assigned targets).
@@ -329,7 +330,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**180 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**186 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution

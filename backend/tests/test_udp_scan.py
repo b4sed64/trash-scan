@@ -60,16 +60,27 @@ def _settings(*, allow_raw_packet: bool) -> SimpleNamespace:
     )
 
 
-def _run(monkeypatch, tmp_path, *, allow_raw_packet: bool, udp_scan: bool, nse_scripts: bool = True):
+def _run(monkeypatch, tmp_path, *, allow_raw_packet: bool, udp_scan: bool, nse_scripts: bool = True,
+         udp_ports: str | None = None):
     import app.adapters.nmap as nmap_module
     monkeypatch.setattr(nmap_module, "get_settings", lambda: _settings(allow_raw_packet=allow_raw_packet))
+    options = {"syn": False, "os_detection": False, "service_detection": True,
+               "nse_scripts": nse_scripts, "udp_scan": udp_scan}
+    if udp_ports is not None:
+        options["udp_ports"] = udp_ports
     inp = StageInput(
         stage="nmap", target_kind="IPV4", target_value="127.0.0.1", profile="STANDARD_ACTIVE",
-        hosts=["127.0.0.1"], result_dir=str(tmp_path),
-        options={"syn": False, "os_detection": False, "service_detection": True,
-                 "nse_scripts": nse_scripts, "udp_scan": udp_scan},
+        hosts=["127.0.0.1"], result_dir=str(tmp_path), options=options,
     )
     return NmapAdapter().run(inp)
+
+
+def test_udp_ports_option_overrides_the_configured_default(monkeypatch, tmp_path):
+    """An admin-defined UDP PortSet, threaded through as ``udp_ports``, takes
+    over from ``TRASHSCAN_STANDARD_UDP_PORTS`` for this scan."""
+    out = _run(monkeypatch, tmp_path, allow_raw_packet=True, udp_scan=True, udp_ports="9999")
+    port_arg = out.args[out.args.index("-p") + 1]
+    assert port_arg == "T:80,443,U:9999"
 
 
 def test_udp_scan_disabled_by_default_even_if_profile_requests_it(monkeypatch, tmp_path):

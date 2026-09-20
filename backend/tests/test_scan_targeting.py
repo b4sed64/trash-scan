@@ -141,3 +141,35 @@ def test_port_preset_web(env):
     approvals = env["admin"].get("/api/approvals").json()
     opts = next(a for a in approvals if a["execution_id"] == ex_id)["requested_options"]
     assert opts["ports"] == "80,443,8080,8443,8000,8888"
+
+
+# --- UDP ports (Standard active — see PortSet.protocol / nmap._UDP_ONLY_SCRIPTS) ---
+def test_active_scan_records_custom_udp_ports(env):
+    r = _p(env["admin"], "/api/scans", {
+        "target_id": env["assigned"], "profile": "STANDARD_ACTIVE",
+        "attestation_text": ACTIVE_SCAN_ATTESTATION, "udp_ports": "161,137",
+    })
+    assert r.status_code == 201
+    ex_id = r.json()["executions"][0]["id"]
+    approvals = env["admin"].get("/api/approvals").json()
+    opts = next(a for a in approvals if a["execution_id"] == ex_id)["requested_options"]
+    assert opts["udp_ports"] == "161,137"
+
+
+def test_active_scan_rejects_bad_udp_ports(env):
+    r = _p(env["admin"], "/api/scans", {
+        "target_id": env["assigned"], "profile": "STANDARD_ACTIVE",
+        "attestation_text": ACTIVE_SCAN_ATTESTATION, "udp_ports": "161,not-a-port",
+    })
+    assert r.status_code == 422
+
+
+def test_udp_ports_defaults_to_none_when_not_specified(env):
+    r = _p(env["admin"], "/api/scans", {
+        "target_id": env["assigned"], "profile": "STANDARD_ACTIVE",
+        "attestation_text": ACTIVE_SCAN_ATTESTATION,
+    })
+    ex_id = r.json()["executions"][0]["id"]
+    approvals = env["admin"].get("/api/approvals").json()
+    opts = next(a for a in approvals if a["execution_id"] == ex_id)["requested_options"]
+    assert opts["udp_ports"] is None

@@ -10,8 +10,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 |---|---|
 | `0006_port_sets` | `port_sets` table — administrator-defined reusable named port selections |
 | `0007_scan_groups` | `scan_executions.scan_group_id` / `group_seq` / `group_size` and `scan_approvals.scan_group_id`, so one scan spans many targets. Existing rows are back-filled (each becomes a group of one). |
+| `0008_port_set_protocol` | `port_sets.protocol` (`TCP`/`UDP`, default `TCP`, backfilled via `server_default`) — see "Port profiles" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0007_scan_groups`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0008_port_set_protocol`.
 
 ## One scan, many targets, manual start
 
@@ -44,14 +45,14 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/findings` | Findings across every target the caller may see, ranked by severity (drives the dashboard). |
 | `GET /api/audit/actions` | Distinct audit action types, for the Logs filter UI. |
 | `GET /api/audit/events` | Now accepts `action` (repeatable), `q` (free-text over object id / seq / payload values), and `order=asc\|desc`. |
-| `POST /api/scans` | Create **one scan** over any mix of `target_id(s)` and typed `target_value(s)` (host / IP / CIDR); duplicates collapsed. Returns `{"scan_id", "state", "executions": [...]}` — one execution per resolved target, all sharing `scan_id`. The scan is created **idle** (passive → `DRAFT`, active → `AWAITING_APPROVAL`); nothing runs until Start. An administrator may create an as-yet-undefined target on the fly (deny rules still apply); a scanner cannot. Active scans accept a `port_preset` and/or `ports` spec and need one approval for the group. |
+| `POST /api/scans` | Create **one scan** over any mix of `target_id(s)` and typed `target_value(s)` (host / IP / CIDR); duplicates collapsed. Returns `{"scan_id", "state", "executions": [...]}` — one execution per resolved target, all sharing `scan_id`. The scan is created **idle** (passive → `DRAFT`, active → `AWAITING_APPROVAL`); nothing runs until Start. An administrator may create an as-yet-undefined target on the fly (deny rules still apply); a scanner cannot. Active scans accept a `port_preset` and/or `ports` spec (TCP) and need one approval for the group. `udp_ports` is also accepted, validated the same way (`scan_profiles.parse_port_spec`) — only meaningful for `STANDARD_ACTIVE` with UDP scanning enabled; `null`/omitted falls back to `TRASHSCAN_STANDARD_UDP_PORTS`. |
 | `GET /api/scans` | Now returns **scan groups** (one row per `scan_id`) with aggregate `state`, `target_count`, per-target `targets[]`, and the group `approval`. |
 | `GET /api/scans/{scan_id}` | Accepts a group id (or a bare execution id). Returns the group summary plus `hosts[]` (per-target state, stages, assets, services, findings) and a `summary` block (severity counts, totals, hosts completed) for the per-host review view. |
 | `POST /api/scans/{scan_id}/start` | Requester or administrator. Moves idle executions (`APPROVED`, or passive `DRAFT`) to `QUEUED` and enqueues them; 409 if there is nothing to start or the approval window elapsed. |
 | `POST /api/scans/{scan_id}/pause` | Requester or administrator. Pulls every `QUEUED` execution back out of the run queue — to `APPROVED` (active) or `DRAFT` (passive); 409 if nothing is queued or the scan is already running. |
 | `POST /api/scans/{scan_id}/stop` | Requester or administrator. Requests cancellation of every non-terminal execution in the group; 409 if the scan is already finished. |
-| `GET /api/scans/port-presets` | Built-in port presets plus the administrator-defined port sets. |
-| `GET/POST/DELETE /api/admin/port-sets` | CRUD for administrator-defined port sets. The spec is validated and canonicalised (`scan_profiles.parse_port_spec`, capped at 6000 ports). |
+| `GET /api/scans/port-presets` | Built-in TCP port presets plus every administrator-defined port set (now including `protocol` and `note`), open to any authenticated user — the read path the Ports and Scans pages both use. |
+| `GET/POST/DELETE /api/admin/port-sets` | Administrator-only CRUD for port sets. `protocol` (`TCP`/`UDP`, default `TCP`) plus the spec are validated (`scan_profiles.parse_port_spec`, capped at 6000 ports) and canonicalised. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -320,9 +321,38 @@ shipped off by default, and one new pinned tool for broader crawling. See
     matching the `ldap-rootdse`/`rdp-enum-encryption` precedent — it's
     asset-identification data, not a posture verdict.
 
+## Port profiles (TCP/UDP) and a dedicated Ports page
+
+Port sets existed since `0006_port_sets` but only as a section buried inside the
+Administration page, TCP-only, with no relationship to the UDP-scan work above. Requested
+directly: promote them to a first-class page, the same way Targets is one, and let a set
+declare which protocol it's for.
+
+- **`PortSet.protocol`** (`0008_port_set_protocol`, default `TCP`, backfilled via
+  `server_default` so existing rows need no data migration) — a set is TCP or UDP, never
+  mixed, matching how Nmap's own combined port spec (`-p T:...,U:...`) keeps the two apart.
+  `PortSetCreate` validates it (`^(TCP|UDP)$`); port-number validation itself
+  (`parse_port_spec`, 1–65535, 6000-port cap) doesn't change — it never depended on protocol.
+- **`Ports` page** (`frontend/src/pages/Ports.tsx`, route `/ports`, nav link next to
+  Targets) — replaces the "Port Sets" section removed from Administration. Visible to every
+  authenticated user (reads `GET /api/scans/port-presets`, the same open endpoint the Scans
+  page already used, now also carrying `protocol` and `note`); an Administrator-only form
+  creates/removes profiles via `/api/admin/port-sets`, split into separate "TCP Profiles" and
+  "UDP Profiles" tables.
+- **UDP profiles actually do something.** A new `CreateScan.udp_ports` field (validated the
+  same way as `ports`) flows through `_active_options` → `ScanExecution.options["udp_ports"]`
+  → `worker/runner.py` → `nmap.py`, where it replaces `settings.standard_udp_ports` for that
+  one scan when set (`str(inp.options.get("udp_ports") or settings.standard_udp_ports)`).
+  Unset (the default) keeps today's fixed-list behavior exactly. On the Scans page, a UDP
+  ports `MultiSelect` (sourced from `protocol: "UDP"` port sets only) plus a typed-ports field
+  appear only for `STANDARD_ACTIVE`, composed client-side the same way the existing TCP ports
+  picker already works (`compose()` is now a shared helper both call).
+- The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
+  a UDP profile can never accidentally end up in the TCP `-p` argument.
+
 ## Tests
 
-The suite is now **180 tests**. Post-MVP additions:
+The suite is now **186 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -339,7 +369,11 @@ through both the fake adapter directly and a full passive scan execution), `test
 (the SNMP default-community finding rule; that `snmp-sysdescr`/`nbstat` are only ever added
 to `--script` when UDP scanning is enabled, checked directly against the real adapter's argv
 construction with a monkeypatched settings object, not just the fake pipeline; profile
-wiring; end-to-end through the fake pipeline).
+wiring; end-to-end through the fake pipeline; that a `udp_ports` option overrides
+`TRASHSCAN_STANDARD_UDP_PORTS` in the real adapter's argv). `test_port_sets.py` and
+`test_scan_targeting.py` gained coverage for `PortSet.protocol` (default, explicit `UDP`,
+rejection of an invalid value) and for `CreateScan.udp_ports` (recorded on the scan's
+approval options, rejected with 422 on a malformed spec, `None` when not specified).
 
 ## Concurrency fix
 

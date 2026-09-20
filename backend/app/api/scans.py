@@ -36,6 +36,7 @@ from ..scan_profiles import (
     PORT_PRESETS,
     RATE_CHOICES,
     PortSpecError,
+    parse_port_spec,
     profile_for,
     resolve_ports,
     resolve_rate,
@@ -58,6 +59,7 @@ class CreateScan(BaseModel):
     rate_choice: str = Field(default="CONSERVATIVE", pattern=r"^(CONSERVATIVE|MODERATE)$")
     port_preset: str | None = None
     ports: str | None = Field(default=None, max_length=2000)
+    udp_ports: str | None = Field(default=None, max_length=2000)
 
 
 class CreateScanFlexible(CreateScan):
@@ -155,7 +157,7 @@ def port_presets(_: User = Depends(get_current_user), db: Session = Depends(get_
     from ..models import PortSet
 
     defined = [
-        {"id": p.id, "name": p.name, "spec": p.spec}
+        {"id": p.id, "name": p.name, "protocol": p.protocol, "spec": p.spec, "note": p.note}
         for p in db.execute(select(PortSet).order_by(PortSet.name)).scalars()
     ]
     return {"presets": PORT_PRESETS, "port_sets": defined}
@@ -167,8 +169,17 @@ def _active_options(body: CreateScan) -> dict:
         ports = resolve_ports(body.port_preset, body.ports)
     except PortSpecError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    udp_ports = None
+    if body.udp_ports:
+        try:
+            udp_ports = parse_port_spec(body.udp_ports)
+        except PortSpecError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     return {
         "ports": ports,
+        # Only ever consumed when the Standard profile's UDP scan is enabled
+        # (nmap.py) — None means "use the TRASHSCAN_STANDARD_UDP_PORTS default".
+        "udp_ports": udp_ports,
         "port_preset": (body.port_preset or "PROFILE_DEFAULT").upper(),
         "rate_choice": body.rate_choice,
         "rate_per_second": resolve_rate(body.rate_choice, RATE_CHOICES["CONSERVATIVE"]),

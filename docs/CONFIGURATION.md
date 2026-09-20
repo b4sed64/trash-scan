@@ -126,9 +126,11 @@ The scanner only ever invokes product-approved options — never a raw flag from
 | `TRASHSCAN_KATANA_MAX_PAGES_PER_HOST` | `25` | Bound on pages katana will crawl per host, either profile. |
 | `TRASHSCAN_KATANA_CRAWL_DURATION_SECONDS` | `60` | Wall-clock time budget for the crawl, either profile. |
 
-Administrators can also define **named port sets** in the UI (Administration → Port Sets);
-a scan picks a built-in preset, a defined set, and/or a typed list. Any spec is validated
-and capped at 6000 ports.
+Administrators can also define **named port profiles** in the UI (the **Ports** page), each
+tagged `TCP` or `UDP`. An active scan picks a built-in TCP preset, a defined TCP profile,
+and/or a typed list for its `-p` argument; a `STANDARD_ACTIVE` scan may additionally pick a
+UDP profile (or type UDP ports) to replace `TRASHSCAN_STANDARD_UDP_PORTS` above for that one
+scan. Any spec is validated and capped at 6000 ports.
 
 ## External OSINT lookups
 

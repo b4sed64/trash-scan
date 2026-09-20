@@ -167,7 +167,7 @@ class HttpxAdapter:
             BIN, "-silent", "-json", "-no-color", "-disable-update-check",
             "-l", infile, "-o", outfile,
             "-status-code", "-title", "-tech-detect", "-content-type", "-web-server",
-            "-location", "-tls-grab", "-response-time",
+            "-location", "-tls-grab", "-response-time", "-favicon",
             "-timeout", "10", "-retries", "1",
             "-rate-limit", rps,
             "-response-size-to-read", str(int(settings.max_response_bytes)),
@@ -245,6 +245,13 @@ def _parse(lines: list[str], inp: StageInput) -> tuple[list[DiscoveredObservatio
         for tech in row.get("tech") or row.get("technologies") or []:
             observations.append(DiscoveredObservation(kind="TECH", key="tech", value=str(tech)[:80],
                                        source="httpx", asset_value=host or None))
+        if row.get("favicon"):
+            # mmh3 hash of /favicon.ico — the same fingerprinting technique
+            # Shodan's http.favicon.hash uses, useful for spotting a known
+            # product/CMS even when its version banner is otherwise hidden.
+            observations.append(DiscoveredObservation(kind="TECH", key="favicon-hash",
+                                       value=str(row["favicon"]), source="httpx",
+                                       asset_value=host or None))
         tls = row.get("tls") or {}
         if tls:
             subj = tls.get("subject_cn") or tls.get("subject_dn") or ""

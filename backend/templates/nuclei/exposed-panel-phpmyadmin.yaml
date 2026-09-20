@@ -1,0 +1,30 @@
+id: trashscan-exposed-panel-phpmyadmin
+
+info:
+  name: phpMyAdmin Panel Exposed
+  author: trash-scan
+  severity: info
+  description: A phpMyAdmin login panel is reachable, which is a common target for credential attacks and version-specific exploits once discovered.
+  tags: panel,exposure,phpmyadmin
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/phpmyadmin/"
+      - "{{BaseURL}}/phpMyAdmin/"
+      - "{{BaseURL}}/admin/phpmyadmin/"
+      - "{{BaseURL}}/pma/"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - 'alt="phpMyAdmin'
+          - 'name="pma_username'
+        condition: or
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - 'v=([a-z0-9-._]+)'

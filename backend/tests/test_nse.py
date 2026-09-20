@@ -13,7 +13,13 @@ import pytest
 
 from app.adapters.base import StageInput
 from app.adapters.fake import FakeNmapAdapter, _octet
-from app.adapters.nmap import NSE_SCRIPTS, _parse_xml, smb_signing_finding
+from app.adapters.nmap import (
+    NSE_SCRIPTS,
+    _parse_xml,
+    smb_protocols_finding,
+    smb_signing_finding,
+    ssl_cert_findings,
+)
 from app.models import Finding, PrivateCidr, ScanExecution, Target, User
 from app.scan_profiles import PROFILES
 from app.security import hash_password
@@ -47,6 +53,54 @@ def test_smb_signing_tolerates_unrelated_output():
     assert smb_signing_finding("smb2-security-mode", "some unrelated banner", "10.10.1.5") is None
 
 
+# --- ssl_cert_findings ------------------------------------------------------
+
+
+def test_ssl_cert_flags_expired_certificate():
+    out = "Subject: commonName=x.example.com\nNot valid before: 2019-01-01T00:00:00\nNot valid after:  2020-01-01T00:00:00"
+    findings = ssl_cert_findings(out, "10.10.1.5", 636)
+    assert [f.rule_id for f in findings] == ["tls-cert-expired"]
+    assert findings[0].severity == "HIGH"
+
+
+def test_ssl_cert_flags_expiring_soon():
+    soon = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%S")
+    out = f"Subject: commonName=x.example.com\nNot valid after:  {soon}"
+    findings = ssl_cert_findings(out, "10.10.1.5", 636)
+    assert [f.rule_id for f in findings] == ["tls-cert-expiring-soon"]
+
+
+def test_ssl_cert_healthy_certificate_is_clean():
+    out = "Subject: commonName=x.example.com\nNot valid after:  2099-01-01T00:00:00"
+    assert ssl_cert_findings(out, "10.10.1.5", 636) == []
+
+
+def test_ssl_cert_tolerates_missing_or_malformed_output():
+    assert ssl_cert_findings("", "10.10.1.5", 636) == []
+    assert ssl_cert_findings("no validity line here", "10.10.1.5", 636) == []
+    assert ssl_cert_findings("Not valid after:  not-a-date", "10.10.1.5", 636) == []
+
+
+# --- smb_protocols_finding ---------------------------------------------------
+
+
+def test_smb_protocols_flags_smbv1():
+    out = "dialects: \n  NT LM 0.12 (SMBv1) [dangerous, but default]\n  2.0.2\n  2.1"
+    f = smb_protocols_finding(out, "10.10.1.5")
+    assert f is not None
+    assert f.rule_id == "smb1-enabled"
+    assert f.severity == "HIGH"
+
+
+def test_smb_protocols_clean_when_smbv1_absent():
+    out = "dialects: \n  2.0.2\n  2.1\n  3.0\n  3.0.2\n  3.1.1"
+    assert smb_protocols_finding(out, "10.10.1.5") is None
+
+
+def test_smb_protocols_tolerates_unrelated_output():
+    assert smb_protocols_finding("", "10.10.1.5") is None
+
+
 # --- _parse_xml: hostscript + port-level script elements -------------------
 
 _XML = """<?xml version="1.0"?>
@@ -64,9 +118,15 @@ _XML = """<?xml version="1.0"?>
 <service name="ms-wbt-server"/>
 <script id="rdp-enum-encryption" output="Security layer: RDP, SSL, CredSSP"/>
 </port>
+<port protocol="tcp" portid="636">
+<state state="open"/>
+<service name="ldapssl"/>
+<script id="ssl-cert" output="Subject: commonName=10.10.1.5&#10;Not valid after:  2020-01-01T00:00:00"/>
+</port>
 </ports>
 <hostscript>
 <script id="smb2-security-mode" output="Message signing enabled but not required"/>
+<script id="smb-protocols" output="dialects: &#10;  NT LM 0.12 (SMBv1) [dangerous, but default]&#10;  2.0.2"/>
 <script id="not-on-the-allowlist" output="should never appear"/>
 </hostscript>
 </host>
@@ -77,13 +137,15 @@ def test_parse_xml_surfaces_allowlisted_scripts_as_observations():
     _, observations, findings, parsed = _parse_xml(_XML)
     assert parsed
     ids = {o.key for o in observations}
-    assert ids == {"ldap-rootdse", "rdp-enum-encryption", "smb2-security-mode"}
+    assert ids == {"ldap-rootdse", "rdp-enum-encryption", "smb2-security-mode", "ssl-cert",
+                   "smb-protocols"}
     assert "not-on-the-allowlist" not in ids
 
 
-def test_parse_xml_turns_smb_signing_output_into_a_finding():
+def test_parse_xml_turns_script_output_into_findings():
     _, _, findings, _ = _parse_xml(_XML)
-    assert [f.rule_id for f in findings] == ["smb-signing-not-required"]
+    ids = {f.rule_id for f in findings}
+    assert ids == {"smb-signing-not-required", "tls-cert-expired", "smb1-enabled"}
 
 
 def test_nse_scripts_allowlist_is_never_a_category_or_wildcard():

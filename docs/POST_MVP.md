@@ -250,10 +250,52 @@ shipped off by default, and one new pinned tool for broader crawling. See
   against (Standard's `1-1024` range already covered it). `services/comparison.py`'s
   `_STAGE_FOR_TOOL` map gained an `nmap` entry so these findings participate in
   NEW/STILL_OBSERVED/CHANGED/NOT_OBSERVED baseline comparison like every other tool's.
+- **A second recon/vuln-scanning round**, added right after the NSE allowlist above:
+  - **Two more NSE scripts**: `ssl-cert` (reads a certificate's validity period on
+    non-HTTP TLS services — LDAPS, SMTP-STARTTLS, RDP-over-TLS — that httpx's
+    `-tls-grab` never sees, since it only ever probes HTTP(S); reuses the
+    `tls-cert-expired`/`tls-cert-expiring-soon` rule ids so it slots into the same
+    posture story as httpx's TLS findings, just from a different source_tool) and
+    `smb-protocols` (lists which SMB dialects a server accepts; flags SMBv1 as
+    `smb1-enabled` HIGH by keying off Nmap's own literal `[dangerous, but default]`
+    marker in the script's output — the protocol version implicated in
+    EternalBlue/WannaCry). Both pure functions (`nmap.ssl_cert_findings`,
+    `nmap.smb_protocols_finding`) added to the same `NSE_SCRIPTS` allowlist and
+    `_findings_for_script` dispatcher the first four scripts use.
+  - **Favicon fingerprinting (httpx)** — added `-favicon` to the httpx argv, which
+    computes an mmh3 hash of `/favicon.ico`, the same technique Shodan's
+    `http.favicon.hash` uses to identify a known product/CMS even when its version
+    banner is hidden. Surfaces as a `TECH`/`favicon-hash` observation. This is
+    genuinely one extra request per host (correcting an earlier description of it
+    as "free" — it isn't zero-request, just a very lightweight, browser-normal one).
+  - **PTR sweep of a CIDR target (dnsx)** — for a `CIDR` target, `worker/runner.py`
+    now expands the approved range (same 1024-address bound as Nmap's literal-IP
+    expansion) and feeds every address to dnsx, which already supported `-ptr`
+    for a list of IPs; the only gap was that a CIDR target never got its
+    addresses put in front of dnsx. Pure DNS traffic against the resolver, never a
+    packet to the swept hosts, so it runs in the `PASSIVE` profile too, not just
+    the active ones.
+  - **4 new Nuclei templates** (13 total, up from 9), adapted from the
+    MIT-licensed `projectdiscovery/nuclei-templates`, condensed to house style
+    (single GET, `trashscan-` id, `author: trash-scan`): `exposed-panel-phpmyadmin`,
+    `exposed-panel-grafana` (admin panels reachable without any special access),
+    `eol-apache-httpd`, `eol-php` (version banner discloses software past its
+    vendor end-of-life date, via Nuclei's `compare_versions()` DSL function against
+    the same thresholds the upstream templates use). All `info` severity — detection,
+    not a vulnerability by itself.
+  - **SNMP discovery and NetBIOS `nbstat` were requested but not built.** Both
+    require Nmap to do a UDP scan (SNMP listens on UDP/161; NetBIOS name queries
+    use UDP/137 — confirmed directly from Nmap's own `snmp-sysdescr.nse` portrule
+    and `nbstat.nse`'s own usage example, `nmap -sU --script nbstat.nse -p137`).
+    This adapter only ever runs `-sT`/`-sS` (TCP); UDP scanning is a PRD §12.1
+    deferred capability, not just an unimplemented flag, and adding it is a
+    materially bigger feature (a new scan mode, its own privilege/timing
+    questions) than "add another script name" — scoped out as its own future
+    PRD item rather than folded into this batch.
 
 ## Tests
 
-The suite is now **161 tests**. Post-MVP additions:
+The suite is now **172 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -262,9 +304,11 @@ and SPF/DMARC/CAA finding rules, end to end through both scan classifications),
 `test_osint.py` (crt.sh/RDAP parsing, the off-by-default gate, and the injected-fetcher
 adapter path — fully offline), `test_katana.py` (endpoint parsing against katana's
 real JSONL shape, profile wiring, and end-to-end through the fake pipeline), `test_nse.py`
-(SMB-signing rule logic, XML parsing of both `<hostscript>` and per-port `<script>`
-elements including rejection of any non-allowlisted script id, profile wiring, and
-end-to-end through the fake pipeline).
+(SMB-signing, TLS-expiry, and SMBv1 rule logic; XML parsing of both `<hostscript>` and
+per-port `<script>` elements including rejection of any non-allowlisted script id; profile
+wiring; end-to-end through the fake pipeline), `test_recon_additions.py` (favicon-hash
+observation parsing and its absence when httpx reports no hash; PTR-sweep of a CIDR range
+through both the fake adapter directly and a full passive scan execution).
 
 ## Concurrency fix
 

@@ -8,6 +8,12 @@ TXT and CAA records are already an approved dnsx responsibility. ``dns_posture_f
 interprets the ones that carry an email/certificate-authority policy (SPF, DMARC,
 CAA) into actionable findings instead of leaving them as inert raw-record
 observations — passive, no approval needed, since it is pure DNS lookup.
+
+For a CIDR target, ``worker/runner.py`` expands the approved range (bounded, same
+1024-address cap as the Nmap literal-IP expansion) and feeds every address here so
+``-ptr`` resolves a reverse-DNS name for each — a PTR sweep is pure DNS traffic
+against the resolver, never a packet to the hosts themselves, so it is safe to run
+in the PASSIVE profile too.
 """
 from __future__ import annotations
 

@@ -155,11 +155,18 @@ capability here that sends the target's domain to a third-party public service, 
 opt-in rather than on by default.
 
 Active profiles also run a fixed, Administrator-reviewed Nmap NSE allowlist —
-`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption` — all
-Nmap-categorized `safe`/`discovery`/`default`, invoked by exact script name only, never a
-category or wildcard. SMB signing posture becomes a severity-ranked finding
-(`smb-signing-not-required`); the LDAP root DSE and RDP encryption-negotiation results
-surface as observations for an analyst to review.
+`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`,
+`ssl-cert`, `smb-protocols` — all Nmap-categorized `safe`/`discovery`/`default`, invoked by
+exact script name only, never a category or wildcard. SMB signing posture
+(`smb-signing-not-required`), certificate expiry on non-HTTP TLS services like LDAPS
+(`tls-cert-expired`/`tls-cert-expiring-soon`), and SMBv1 still being enabled
+(`smb1-enabled`) each become a severity-ranked finding; the LDAP root DSE and RDP
+encryption-negotiation results surface as observations for an analyst to review.
+
+httpx also computes an mmh3 favicon hash (`-favicon`, the same technique Shodan's
+`http.favicon.hash` uses) for spotting a known product/CMS even when its version banner is
+hidden, and for a CIDR target dnsx PTR-sweeps the approved range — pure DNS traffic against
+the resolver, never a packet to the hosts themselves, so it runs in the Passive profile too.
 
 ### Tamper-evident audit (`audit_service.py`)
 
@@ -317,7 +324,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**161 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**172 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution

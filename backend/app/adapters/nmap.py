@@ -14,17 +14,23 @@ Hard restrictions enforced here:
 
 ``smb2-security-mode``/``smb-security-mode`` report whether SMB message signing
 is enforced; ``ldap-rootdse`` reads the anonymously-queryable LDAP root DSE;
-``rdp-enum-encryption`` reports which RDP security layers a host offers. All
-four are Nmap-categorized ``safe``/``discovery``/``default`` with no exception
-needed. ``smb_signing_finding`` turns the signing scripts' output into an
-actionable finding the same way ``httpx.tls_findings`` does for TLS; the other
-two scripts surface as observations only, since their output format isn't
-stable enough to key a severity-ranked rule off with confidence.
+``rdp-enum-encryption`` reports which RDP security layers a host offers;
+``ssl-cert`` reads a certificate's validity period on non-HTTP TLS services
+(LDAPS, SMTP-STARTTLS, RDP-over-TLS — httpx's ``-tls-grab`` only ever sees
+HTTP(S)); ``smb-protocols`` lists which SMB dialects a server accepts. All six
+are Nmap-categorized ``safe``/``discovery``/``default`` with no exception
+needed. ``smb_signing_finding``, ``ssl_cert_findings``, and
+``smb_protocols_finding`` turn their scripts' output into actionable findings
+the same way ``httpx.tls_findings`` does for TLS; ``ldap-rootdse`` and
+``rdp-enum-encryption`` surface as observations only, since their output
+format isn't stable enough to key a severity-ranked rule off with confidence.
 """
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import os
+import re
 
 import defusedxml.ElementTree as ET
 from defusedxml.ElementTree import ParseError
@@ -52,8 +58,11 @@ _WEBBISH = {"http", "https", "http-alt", "https-alt", "http-proxy", "ssl/http"}
 # selected, it never selects one on its own.
 NSE_SCRIPTS = frozenset({
     "smb2-security-mode", "smb-security-mode", "ldap-rootdse", "rdp-enum-encryption",
+    "ssl-cert", "smb-protocols",
 })
 _SIGNING_SCRIPTS = {"smb2-security-mode", "smb-security-mode"}
+_EXPIRING_SOON_DAYS = 30
+_NOT_VALID_AFTER_RE = re.compile(r"Not valid after:\s*([0-9T:\-]+)")
 
 
 def _rule_hash(rule_id: str, version: str = "v1") -> str:
@@ -90,6 +99,66 @@ def smb_signing_finding(script_id: str, output: str, host: str) -> DiscoveredFin
         asset_value=host, matched_at=f"smb://{host}", matcher_name=script_id,
         evidence_key=f"{script_id}:signing:{state}", evidence_summary=(output or "").strip()[:400],
         evidence={"script": script_id, "output": (output or "")[:1000]},
+    )
+
+
+def ssl_cert_findings(output: str, host: str, port: int | None) -> list[DiscoveredFinding]:
+    """Parse ssl-cert's "Not valid after: <ISO time>" line — printed at Nmap's
+    default verbosity, no ``-v`` needed. Nmap reports the certificate's own
+    notAfter time with no UTC offset; treated as UTC here, matching how
+    certificates themselves encode validity (UTCTime/GeneralizedTime)."""
+    m = _NOT_VALID_AFTER_RE.search(output or "")
+    if not m:
+        return []
+    try:
+        expiry = dt.datetime.fromisoformat(m.group(1)).replace(tzinfo=dt.timezone.utc)
+    except ValueError:
+        return []
+    now = dt.datetime.now(dt.timezone.utc)
+    matched_at = f"tls://{host}:{port}" if port else f"tls://{host}"
+
+    def _mk(rule_id: str, severity: str, name: str, description: str, evidence_key: str) -> DiscoveredFinding:
+        return DiscoveredFinding(
+            rule_id=rule_id, template_hash=_rule_hash(rule_id), severity=severity, name=name,
+            description=description, asset_value=host, matched_at=matched_at,
+            matcher_name="ssl-cert", port=port, protocol="tcp",
+            evidence_key=evidence_key, evidence_summary=(output or "").strip()[:400],
+            evidence={"script": "ssl-cert", "not_valid_after": m.group(1)},
+        )
+
+    if expiry < now:
+        return [_mk(
+            "tls-cert-expired", "HIGH", "TLS Certificate Expired",
+            "The presented certificate's validity period has ended.",
+            evidence_key=f"expired:{host}:{port}",
+        )]
+    days_left = (expiry - now).days
+    if days_left <= _EXPIRING_SOON_DAYS:
+        return [_mk(
+            "tls-cert-expiring-soon", "MEDIUM", "TLS Certificate Expiring Soon",
+            f"The certificate expires within {_EXPIRING_SOON_DAYS} days.",
+            evidence_key=f"expiring:{host}:{port}",
+        )]
+    return []
+
+
+def smb_protocols_finding(output: str, host: str) -> DiscoveredFinding | None:
+    """SMBv1 is the dialect implicated in EternalBlue/WannaCry. Nmap's own
+    smb-protocols script marks it "[dangerous, but default]" in its output
+    when a server still accepts it — that literal marker is the signal."""
+    text = output or ""
+    if "SMBv1" not in text or "dangerous" not in text.lower():
+        return None
+    return DiscoveredFinding(
+        rule_id="smb1-enabled", template_hash=_rule_hash("smb1-enabled"),
+        severity="HIGH", name="SMBv1 Enabled",
+        description=(
+            "The SMB server still accepts the SMBv1 dialect, which has known serious "
+            "vulnerabilities (e.g. EternalBlue) and should be disabled."
+        ),
+        asset_value=host, matched_at=f"smb://{host}", matcher_name="smb-protocols",
+        evidence_key="smb1-enabled", evidence_summary=text.strip()[:400],
+        evidence={"script": "smb-protocols", "output": text[:1000]},
     )
 
 
@@ -193,6 +262,18 @@ def _script_observation(script_id: str, output: str, host: str) -> DiscoveredObs
     )
 
 
+def _findings_for_script(script_id: str, output: str, host: str, port: int | None) -> list[DiscoveredFinding]:
+    if script_id in _SIGNING_SCRIPTS:
+        f = smb_signing_finding(script_id, output, host)
+        return [f] if f else []
+    if script_id == "ssl-cert":
+        return ssl_cert_findings(output, host, port)
+    if script_id == "smb-protocols":
+        f = smb_protocols_finding(output, host)
+        return [f] if f else []
+    return []
+
+
 def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObservation], list[DiscoveredFinding], bool]:
     services: list[DiscoveredService] = []
     observations: list[DiscoveredObservation] = []
@@ -241,16 +322,14 @@ def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObser
                         kind="TECH", key="web-port", value=f"{addr}:{p.get('portid')}",
                         source="nmap", asset_value=addr,
                     ))
+                port_num = int(p.get("portid", "0")) or None
                 for sc in p.findall("script"):
                     sid = sc.get("id", "")
                     if sid not in NSE_SCRIPTS:
                         continue
                     sout = sc.get("output", "")
                     observations.append(_script_observation(sid, sout, addr))
-                    if sid in _SIGNING_SCRIPTS:
-                        f = smb_signing_finding(sid, sout, addr)
-                        if f:
-                            findings.append(f)
+                    findings.extend(_findings_for_script(sid, sout, addr, port_num))
         for hs in host.findall("hostscript"):
             for sc in hs.findall("script"):
                 sid = sc.get("id", "")
@@ -258,10 +337,7 @@ def _parse_xml(text: str) -> tuple[list[DiscoveredService], list[DiscoveredObser
                     continue
                 sout = sc.get("output", "")
                 observations.append(_script_observation(sid, sout, addr))
-                if sid in _SIGNING_SCRIPTS:
-                    f = smb_signing_finding(sid, sout, addr)
-                    if f:
-                        findings.append(f)
+                findings.extend(_findings_for_script(sid, sout, addr, None))
         os_el = host.find("os")
         if os_el is not None:
             for m in os_el.findall("osmatch")[:2]:

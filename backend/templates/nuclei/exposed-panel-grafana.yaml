@@ -1,0 +1,26 @@
+id: trashscan-exposed-panel-grafana
+
+info:
+  name: Grafana Login Panel Exposed
+  author: trash-scan
+  severity: info
+  description: A Grafana login panel is reachable, disclosing that a monitoring/observability stack is present and reachable without authentication for the login step itself.
+  tags: panel,exposure,grafana
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/login"
+      - "{{BaseURL}}/graph/login"
+    stop-at-first-match: true
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<title>Grafana</title>"
+    extractors:
+      - type: regex
+        part: body
+        group: 1
+        regex:
+          - '"subTitle":"Grafana v([0-9.]+)'

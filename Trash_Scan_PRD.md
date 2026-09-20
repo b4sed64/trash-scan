@@ -352,10 +352,12 @@ The approved bundle is Nmap, Subfinder, dnsx, ProjectDiscovery httpx, ProjectDis
 - UDP scanning is deferred.
 
 **Implementation status (living):** Delivered. The Administrator-reviewed allowlist is
-`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption` — all
-Nmap-categorized `safe`/`discovery`/`default`, run in the Safe and Standard active profiles
-via an exact `--script` name list, never a category or wildcard. See `docs/POST_MVP.md` for
-why `ssl-enum-ciphers` was considered and excluded (Nmap categorizes it `intrusive`).
+`smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`,
+`ssl-cert`, `smb-protocols` — all Nmap-categorized `safe`/`discovery`/`default`, run in the
+Safe and Standard active profiles via an exact `--script` name list, never a category or
+wildcard. See `docs/POST_MVP.md` for why `ssl-enum-ciphers` was considered and excluded
+(Nmap categorizes it `intrusive`), and why SNMP discovery and `nbstat` were not added
+(both require UDP scanning, which this section defers).
 
 ### 12.2 Subfinder
 
@@ -373,6 +375,9 @@ why `ssl-enum-ciphers` was considered and excluded (Nmap categorizes it `intrusi
 
 - Resolve and validate A, AAAA metadata, CNAME, PTR, MX, NS, TXT, SRV, SOA, and CAA records where applicable.
 - Support Administrator-defined internal DNS resolvers for the lab.
+- For a CIDR target, PTR-sweep the approved range (bounded, same cap as Nmap's literal-IP
+  expansion) — pure DNS traffic against the resolver, never a packet to the swept hosts, so
+  it runs in the Passive profile as well as the active ones.
 
 **Restrictions**
 
@@ -386,6 +391,9 @@ why `ssl-enum-ciphers` was considered and excluded (Nmap categorizes it `intrusi
 
 - HTTP/HTTPS reachability.
 - Status code, title, content type, server header, redirect, response time, TLS metadata, and technology indicators.
+- Favicon mmh3 hash fingerprinting (`-favicon`), the same technique Shodan's `http.favicon.hash`
+  uses to spot a known product/CMS even when its version banner is otherwise hidden — one
+  additional lightweight GET per host, the same request a browser makes on every page load.
 
 **Restrictions**
 
@@ -406,6 +414,15 @@ why `ssl-enum-ciphers` was considered and excluded (Nmap categorizes it `intrusi
 - Disable automatic template and binary updates.
 - Require explicit review before headless templates or multi-step workflows are added.
 - Store the template identifier, template content hash, severity, matcher summary, and evidence for every result.
+
+**Implementation status (living):** 13 house-authored templates under
+`backend/templates/nuclei/`, each `sha256`-pinned in `nuclei-manifest.json` — exposure/
+misconfiguration detection (default pages, exposed `.env`/`.git`/`phpinfo`, basic auth,
+directory listing, missing security headers, version disclosure), 2 exposed-admin-panel
+detections (phpMyAdmin, Grafana — adapted from the MIT-licensed
+`projectdiscovery/nuclei-templates`), and 2 end-of-life software disclosures (Apache HTTP
+Server, PHP, also adapted from that repo). All single-GET, matcher/extractor-only, `info`
+or `low` severity.
 
 ### 12.6 ProjectDiscovery katana
 
@@ -912,7 +929,8 @@ Tests must use systems owned by the team inside the authorized lab.
 - External notifications.
 - SSO, MFA, and multi-team tenancy.
 - Automated public-target ownership verification and authorization-document uploads.
-- UDP scanning, screenshots, and authenticated checks.
+- UDP scanning, screenshots, and authenticated checks. (SNMP discovery and NetBIOS `nbstat`
+  were considered post-MVP but need UDP scan support first — see `docs/POST_MVP.md`.)
 - ~~Broader OSINT providers~~ — partially delivered post-MVP: crt.sh Certificate
   Transparency and WHOIS/RDAP domain registration lookups (§25 Phase 6), off by
   default (`TRASHSCAN_ENABLE_EXTERNAL_OSINT`). Still deferred: any provider beyond

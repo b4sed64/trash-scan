@@ -29,7 +29,7 @@ from .base import (
 )
 from .dnsx import dns_posture_findings
 from .httpx import tls_findings
-from .nmap import smb_signing_finding
+from .nmap import smb_protocols_finding, smb_signing_finding, ssl_cert_findings
 from .osint import registration_expiry_finding
 
 FAKE_VERSION = "fake/2.0.0"
@@ -94,6 +94,19 @@ class FakeDnsxAdapter:
                                       value=f"host-{inp.target_value.replace('.', '-')}.lab.internal",
                                       source="dnsx", asset_value=inp.target_value)
             )
+        elif inp.target_kind == "CIDR":
+            # Mirrors the real adapter's -ptr sweep: about a third of the swept
+            # range resolves to a name, the rest stays silent — same mix a real
+            # lab network would show.
+            for ip in sorted({h for h in hosts if _is_ipish(h)}):
+                if _octet(ip, "ptr") % 3 == 0:
+                    continue
+                out.assets.append(DiscoveredAsset(kind="IP", value=ip, source="dnsx"))
+                out.observations.append(
+                    DiscoveredObservation(kind="DNS_RECORD", key="PTR",
+                                          value=f"host-{ip.replace('.', '-')}.lab.internal",
+                                          source="dnsx", asset_value=ip)
+                )
         for host in sorted(set(h for h in hosts if "." in h and not _is_ipish(h))):
             # Land inside a typical lab /16 so scope classification is exercised.
             ip = f"10.10.{_octet(host, 'a')}.{_octet(host, 'b')}"
@@ -163,6 +176,25 @@ class FakeNmapAdapter:
                     f = smb_signing_finding("smb2-security-mode", signing, ip)
                     if f:
                         out.findings.append(f)
+                    dialects = ["2.0.2", "2.1", "3.0", "3.0.2", "3.1.1"]
+                    if (_octet(ip, "smb1") % 2) == 0:
+                        dialects.insert(0, "NT LM 0.12 (SMBv1) [dangerous, but default]")
+                    protocols_output = "dialects: \n  " + "\n  ".join(dialects)
+                    out.observations.append(DiscoveredObservation(
+                        kind="NSE", key="smb-protocols", value=protocols_output, source="nmap",
+                        asset_value=ip,
+                    ))
+                    f = smb_protocols_finding(protocols_output, ip)
+                    if f:
+                        out.findings.append(f)
+                if (_octet(ip, "443") % 4) != 0:
+                    not_after = ("2020-01-01T00:00:00" if (_octet(ip, "ssl-cert-expired") % 6) == 0
+                                 else "2099-01-01T00:00:00")
+                    cert_output = f"Subject: commonName={ip}\nNot valid before: 2019-01-01T00:00:00\nNot valid after:  {not_after}"
+                    out.observations.append(DiscoveredObservation(
+                        kind="NSE", key="ssl-cert", value=cert_output, source="nmap", asset_value=ip,
+                    ))
+                    out.findings.extend(ssl_cert_findings(cert_output, ip, 443))
                 if (_octet(ip, "ldap") % 4) == 0:
                     out.services.append(DiscoveredService(
                         asset_value=ip, port=389, protocol="tcp", state="open",
@@ -211,6 +243,10 @@ class FakeHttpxAdapter:
             out.observations.append(DiscoveredObservation(
                 kind="HTTP_HEADER", key="Server", value="nginx/1.25.0", source="httpx",
                 asset_value=host,
+            ))
+            out.observations.append(DiscoveredObservation(
+                kind="TECH", key="favicon-hash", value=str(_octet(host, "favicon") * 1000003),
+                source="httpx", asset_value=host,
             ))
             tls = {
                 "port": "443", "tls_version": "tls12", "cipher": "TLS_AES_128_GCM_SHA256",

@@ -52,7 +52,7 @@ PROFILES: dict[str, Profile] = {
         stages=(STAGE_DNSX, STAGE_NMAP, STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI),
         nmap_service_detection=True, nmap_syn=False, nmap_os_detection=False,
         nmap_nse_scripts=True,
-        description="TCP connect scan of common ports, light service metadata, safe SMB/LDAP/RDP "
+        description="TCP connect scan of common ports, light service metadata, safe SMB/LDAP/RDP/TLS "
                     "configuration-disclosure NSE scripts, HTTP inspection, a shallow bounded "
                     "crawl of discovered web hosts, and reviewed low-impact Nuclei templates.",
     ),
@@ -62,7 +62,7 @@ PROFILES: dict[str, Profile] = {
         nmap_service_detection=True, nmap_syn=True, nmap_os_detection=True,
         nmap_nse_scripts=True,
         description=(
-            "Broader TCP port set, service/version detection, safe SMB/LDAP/RDP "
+            "Broader TCP port set, service/version detection, safe SMB/LDAP/RDP/TLS "
             "configuration-disclosure NSE scripts, HTTP inspection, a deeper bounded crawl of "
             "discovered web hosts. SYN scan and OS detection only where raw-packet capability "
             "is available."

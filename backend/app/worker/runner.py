@@ -190,6 +190,12 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
             hosts = []  # both operate on inp.target_value directly, not a host list
         elif stage_name == STAGE_DNSX:
             hosts = list(discovered_hosts)
+            if target_kind == "CIDR":
+                # A PTR sweep of the approved range — pure DNS lookups against
+                # the resolver, never a packet to the hosts themselves, so it
+                # runs the same in PASSIVE and ACTIVE profiles.
+                net = ipaddress.ip_network(target_value, strict=False)
+                hosts = sorted(set(hosts) | {str(h) for h in list(net.hosts())[:1024]})
         elif stage_name == STAGE_NMAP:
             hosts = list(in_scope_ips)
         elif stage_name in (STAGE_HTTPX, STAGE_KATANA, STAGE_NUCLEI):

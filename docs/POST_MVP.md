@@ -410,9 +410,14 @@ Third work unit — more §8.4 context:
   past date does not prove the domain is re-registrable; verify with the
   registrar first.
 
-Remaining §8.4 units (DKIM selector handling, reviewed rule-family capability
-manifests, and surfacing per-family capability/coverage in the UI) are not yet
-done.
+Fourth work unit — **per-family capability/coverage surfaced in the UI**: the
+scan-detail view now has a dedicated Coverage block per host (see "Coverage
+ledger" above), tying the Phase 8 ledger into the frontend so an analyst can see
+which check families a scan actually assessed vs. skipped.
+
+Remaining Phase 10 items (DKIM selector handling — already a no-op since we never
+brute selectors; and formal reviewed rule-family capability manifests, a §8.3
+admission-structure item) are minor/structural and not yet done.
 
 ## Canonical issues (PRD v2 Phase 9)
 
@@ -465,8 +470,11 @@ incomplete stage could silently "resolve" a real finding — the dangerous
 direction of error. Executions recorded before this change (no `coverage` field
 in their stage metadata) fall back to the prior ok/incomplete logic.
 
-`GET /api/scans/{id}` returns per-host `coverage`, and the scan-detail Stages
-table shows a coverage badge (Assessed / Gaps / Not Assessed / Inconclusive).
+`GET /api/scans/{id}` returns per-host `coverage`, the scan-detail Stages table
+shows a coverage badge (Assessed / Gaps / Not Assessed / Inconclusive), and
+(Phase 10) a dedicated **Coverage** block per host lists each check family with
+its outcome and reason — making "what this scan actually assessed" explicit,
+not just a per-stage badge.
 
 Remaining Phase-8 refinement: an evidence_ref/redaction column on `Observation`
 itself (the coverage ledger carries the bounded reference today).

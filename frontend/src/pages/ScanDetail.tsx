@@ -269,6 +269,49 @@ export function ScanDetail() {
             </details>
           )}
 
+          {(h.coverage ?? []).length > 0 && (
+            <details style={{ marginBottom: "0.8rem" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                Coverage ({(h.coverage ?? []).length})
+              </summary>
+              <p className="muted" style={{ fontSize: "0.82rem", margin: "0.4rem 0" }}>
+                What This Scan Actually Assessed. Only “Assessed” families make a clean result a
+                real negative; the others mean the family was not fully checked.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Check Family</th>
+                      <th>Coverage</th>
+                      <th>Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(h.coverage ?? []).map((c) => {
+                      const cov = COVERAGE_BADGE[c.outcome];
+                      return (
+                        <tr key={`${c.stage}-${c.check_family}`}>
+                          <td>{c.check_family}</td>
+                          <td>
+                            {cov ? (
+                              <span className={`badge ${cov.cls}`}>{cov.label}</span>
+                            ) : (
+                              c.outcome
+                            )}
+                          </td>
+                          <td className="muted" style={{ fontSize: "0.82rem", maxWidth: 420 }}>
+                            {c.reason || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+
           <details style={{ marginBottom: "0.8rem" }} open>
             <summary style={{ cursor: "pointer", fontWeight: 600 }}>
               Findings ({h.findings.length})

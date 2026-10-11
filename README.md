@@ -330,7 +330,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**186 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**193 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
@@ -368,6 +368,7 @@ run **Logs → Verify chain now** — it must report "Chain intact".
 | [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) | Every PRD §24 acceptance criterion → where it is implemented and tested. |
 | [`docs/POST_MVP.md`](docs/POST_MVP.md) | Everything added after the five PRD phases — new endpoints, audit actions, migrations, UI structure. |
 | [`docs/PRD_EVALUATION.md`](docs/PRD_EVALUATION.md) | Assessment of the PRD, ambiguities resolved, risks. |
+| [`docs/IMPLEMENTATION_LEDGER.md`](docs/IMPLEMENTATION_LEDGER.md) | PRD v2 baseline audit + development-phase ledger (Phases 7+): requirement→implementation map, migration inventory, capability matrix, gap plan. |
 | `docs/PHASE{1..5}_STATUS.md` | Point-in-time per-phase deliverable and requirement mapping. |
 
 ### Security-critical modules (require human review on every change)

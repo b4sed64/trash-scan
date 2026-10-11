@@ -28,6 +28,7 @@ from ..services.emergency import active_stop, blocks_execution
 from ..services.execution_service import TERMINAL, ScanService
 from ..services import comparison as comparison_service
 from ..services import oplog
+from ..services.coverage import coverage_outcome, record_coverage
 from ..services.findings import record_findings
 from ..services.normalization import apply_stage_outputs
 from ..services.scope_db import evaluate_target_scope, load_private_cidrs
@@ -225,11 +226,13 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         stage_outputs.append(out)
         tool_versions[out.tool] = out.tool_version
         normalized_args[stage_name] = out.args
+        cov_outcome, cov_reason = coverage_outcome(out)
         stage_meta.append({
             "stage": stage_name, "tool": out.tool, "ok": out.ok, "incomplete": out.incomplete,
             "duration_ms": out.duration_ms, "assets": len(out.assets),
             "services": len(out.services), "observations": len(out.observations),
             "stderr_excerpt": out.stderr_excerpt[:500], "note": out.note,
+            "coverage": cov_outcome, "coverage_reason": cov_reason,
         })
         incomplete = incomplete or out.incomplete or not out.ok
         for a in out.assets:
@@ -253,6 +256,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         try:
             summary = apply_stage_outputs(db, ex, stage_outputs)
             summary.update(record_findings(db, ex, stage_outputs))
+            record_coverage(db, ex, stage_outputs)
         except Exception as exc:  # noqa: BLE001 - a parser must not crash the worker
             db.rollback()
             ex = db.get(ScanExecution, execution_id)

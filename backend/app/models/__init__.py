@@ -415,6 +415,42 @@ class Observation(Base):
     )
 
 
+class CoverageEntry(Base):
+    """Per-execution, per-check-family coverage record (PRD v2 §7, Phase 8).
+
+    Records whether a check family was actually assessed, so a "no findings"
+    result can be told apart from "we could not check". Written once at
+    normalization and never updated (append-only / immutable by convention):
+    a scan's coverage is a historical fact about that run.
+
+    ``outcome`` is one of: ASSESSED (ran to completion, a clean result is a real
+    negative), COMPLETED_WITH_GAPS (ran but hit a limit — timeout, truncation,
+    budget), NOT_ASSESSED (did not run — tool missing, nothing in scope, skipped),
+    INCONCLUSIVE (ran but completion could not be confirmed). Only ASSESSED may
+    establish NOT_OBSERVED in comparison.
+    """
+
+    __tablename__ = "coverage_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("scan_executions.id"), nullable=False, index=True
+    )
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    check_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str] = mapped_column(String(256), default="")
+    # Bounded, redacted pointer to where the evidence lives (e.g. a raw-output
+    # file basename) — never the raw payload itself.
+    evidence_ref: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("execution_id", "stage", "check_family", name="uq_coverage_entry"),
+    )
+
+
 class ScheduleOccurrence(Base):
     __tablename__ = "schedule_occurrences"
 

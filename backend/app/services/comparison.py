@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Finding, FindingSighting, ScanComparison, ScanExecution
 from .audit_service import AuditService
+from .coverage import ASSESSED
 from .findings import severity_rank
 
 NEW = "NEW"
@@ -45,8 +46,14 @@ def find_baseline(db: Session, execution: ScanExecution) -> ScanExecution | None
 
 
 def _stage_ok(execution: ScanExecution, stage_name: str) -> bool:
+    """Whether ``stage_name`` assessed its unit well enough to establish a real
+    negative. Phase 8+: driven by the coverage ledger (only ASSESSED clears).
+    Falls back to the legacy ok/incomplete flags for pre-Phase-8 executions
+    whose stage metadata predates the coverage field."""
     for meta in execution.stages or []:
         if meta.get("stage") == stage_name:
+            if "coverage" in meta:
+                return meta.get("coverage") == ASSESSED
             return bool(meta.get("ok")) and not meta.get("incomplete")
     return False
 

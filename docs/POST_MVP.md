@@ -11,8 +11,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0006_port_sets` | `port_sets` table — administrator-defined reusable named port selections |
 | `0007_scan_groups` | `scan_executions.scan_group_id` / `group_seq` / `group_size` and `scan_approvals.scan_group_id`, so one scan spans many targets. Existing rows are back-filled (each becomes a group of one). |
 | `0008_port_set_protocol` | `port_sets.protocol` (`TCP`/`UDP`, default `TCP`, backfilled via `server_default`) — see "Port profiles" below. |
+| `0009_coverage_ledger` | `coverage_entries` table — per-execution, per-check-family coverage records (PRD v2 Phase 8). See "Coverage ledger" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0008_port_set_protocol`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0009_coverage_ledger`.
 
 ## One scan, many targets, manual start
 
@@ -350,9 +351,40 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Coverage ledger (PRD v2 Phase 8)
+
+Added a per-execution **coverage ledger** so a "no findings" result can be told
+apart from "we never actually checked". Each stage now records a `CoverageEntry`
+(`coverage_entries`, migration `0009`) per check-family, written once at
+normalization and never updated. The outcome is one of:
+
+- `ASSESSED` — ran to completion; a clean result is a real negative.
+- `COMPLETED_WITH_GAPS` — ran but hit a limit (timeout, truncation, budget).
+- `NOT_ASSESSED` — did not run: tool missing, nothing in scope, or an
+  **exit-zero skip** (a stage that exits clean having assessed nothing is *not*
+  a clean negative).
+- `INCONCLUSIVE` — ran but completion could not be confirmed.
+
+`services/coverage.py::coverage_outcome()` derives the outcome conservatively
+(most-cautious branch first) and is shared by the pipeline and the tests. Each
+entry carries a bounded `evidence_ref` (a raw-output file basename, never the
+payload).
+
+**Comparison is now coverage-gated:** only a fully `ASSESSED` stage may mark a
+previously-seen finding `NOT_OBSERVED`. This closes the gap where a skipped or
+incomplete stage could silently "resolve" a real finding — the dangerous
+direction of error. Executions recorded before this change (no `coverage` field
+in their stage metadata) fall back to the prior ok/incomplete logic.
+
+`GET /api/scans/{id}` returns per-host `coverage`, and the scan-detail Stages
+table shows a coverage badge (Assessed / Gaps / Not Assessed / Inconclusive).
+
+Remaining Phase-8 refinement: an evidence_ref/redaction column on `Observation`
+itself (the coverage ledger carries the bounded reference today).
+
 ## Tests
 
-The suite is now **186 tests**. Post-MVP additions:
+The suite is now **193 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -374,6 +406,11 @@ wiring; end-to-end through the fake pipeline; that a `udp_ports` option override
 `test_scan_targeting.py` gained coverage for `PortSet.protocol` (default, explicit `UDP`,
 rejection of an invalid value) and for `CreateScan.udp_ports` (recorded on the scan's
 approval options, rejected with 422 on a malformed spec, `None` when not specified).
+`test_coverage.py` (PRD v2 Phase 8): the `coverage_outcome` mapping (clean →
+`ASSESSED`, incomplete → `COMPLETED_WITH_GAPS`, missing tool / exit-zero skip →
+`NOT_ASSESSED`, unconfirmed → `INCONCLUSIVE`); that a completed scan writes
+`CoverageEntry` rows; and the core guarantee that an exit-zero skipped stage
+cannot clear a previously-seen finding.
 
 ## Concurrency fix
 

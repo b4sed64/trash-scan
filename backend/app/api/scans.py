@@ -22,6 +22,7 @@ from ..db import get_db
 from ..models import (
     Asset,
     AuditEvent,
+    CoverageEntry,
     Finding,
     FindingSighting,
     Notification,
@@ -406,6 +407,10 @@ def _host_block(db: Session, ex: ScanExecution) -> dict:
         select(Observation).where(Observation.execution_id == ex.id)
         .order_by(Observation.kind, Observation.key)
     ).scalars().all()
+    coverage = db.execute(
+        select(CoverageEntry).where(CoverageEntry.execution_id == ex.id)
+        .order_by(CoverageEntry.stage, CoverageEntry.check_family)
+    ).scalars().all()
     return {
         "execution_id": ex.id,
         "target": {"id": ex.target_id, "value": tgt.value if tgt else ex.target_id,
@@ -431,6 +436,11 @@ def _host_block(db: Session, ex: ScanExecution) -> dict:
             {"kind": o.kind, "key": o.key, "value": o.value, "source_tool": o.source_tool,
              "asset_value": asset_value_by_id.get(o.asset_id)}
             for o in observations
+        ],
+        "coverage": [
+            {"stage": c.stage, "check_family": c.check_family, "outcome": c.outcome,
+             "reason": c.reason}
+            for c in coverage
         ],
     }
 

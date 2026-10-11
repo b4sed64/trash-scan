@@ -18,6 +18,14 @@ const PROFILE_LABELS: Record<string, string> = {
   STANDARD_ACTIVE: "Standard Active",
 };
 const TERMINAL = ["COMPLETED", "FAILED", "TIMED_OUT", "DENIED", "EXPIRED", "CANCELLED", "PARTIAL"];
+// Coverage outcome -> (badge class, label). Only "Assessed" means a clean result
+// is a real negative; the others mean the unit was not fully checked.
+const COVERAGE_BADGE: Record<string, { cls: string; label: string }> = {
+  ASSESSED: { cls: "ok", label: "Assessed" },
+  COMPLETED_WITH_GAPS: { cls: "warn", label: "Gaps" },
+  NOT_ASSESSED: { cls: "bad", label: "Not Assessed" },
+  INCONCLUSIVE: { cls: "warn", label: "Inconclusive" },
+};
 const LIVE = ["QUEUED", "RUNNING", "CANCELLING"];
 
 export function ScanDetail() {
@@ -220,12 +228,15 @@ export function ScanDetail() {
                     <tr>
                       <th>Stage</th>
                       <th>Status</th>
+                      <th>Coverage</th>
                       <th>Duration</th>
                       <th>Detail</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(h.stages ?? []).map((st) => (
+                    {(h.stages ?? []).map((st) => {
+                      const cov = st.coverage ? COVERAGE_BADGE[st.coverage] : undefined;
+                      return (
                       <tr key={st.stage}>
                         <td>{st.stage}</td>
                         <td>
@@ -233,6 +244,13 @@ export function ScanDetail() {
                             {st.ok ? "ok" : "failed"}
                           </span>
                           {st.incomplete && <span className="badge warn"> incomplete</span>}
+                        </td>
+                        <td title={st.coverage_reason || undefined}>
+                          {cov ? (
+                            <span className={`badge ${cov.cls}`}>{cov.label}</span>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
                         </td>
                         <td className="muted">{(st.duration_ms / 1000).toFixed(1)}s</td>
                         <td
@@ -243,7 +261,8 @@ export function ScanDetail() {
                           {st.note || (st.ok ? "—" : (st.stderr_excerpt.split("\n")[0] || "no output captured"))}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

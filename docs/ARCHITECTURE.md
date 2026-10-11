@@ -216,6 +216,12 @@ stages. It stays in force until an admin clears it; only one can be active at a 
     *limitation* instead of `NOT_OBSERVED`. `_STAGE_FOR_TOOL` maps a finding's
     `source_tool` to the stage that must have completed cleanly to establish this —
     `nuclei`, `httpx`, `dnsx`, `osint`, and `nmap` all participate.
+  - **Coverage-gated (PRD v2 Phase 8):** "completed cleanly" is now decided by the
+    coverage ledger — only a stage whose `CoverageEntry` outcome is `ASSESSED` may
+    establish `NOT_OBSERVED`. A stage that exited clean but assessed nothing
+    (`NOT_ASSESSED`), hit a limit (`COMPLETED_WITH_GAPS`), or could not confirm
+    completion (`INCONCLUSIVE`) cannot clear a finding. `services/coverage.py`
+    derives the outcome; the per-execution ledger lives in `coverage_entries`.
 - **Findings are not Nuclei-only.** `httpx.py::tls_findings`, `dnsx.py::dns_posture_findings`,
   `osint.py::registration_expiry_finding`, and `nmap.py::smb_signing_finding` /
   `ssl_cert_findings` / `smb_protocols_finding` / `snmp_public_finding` are pure functions

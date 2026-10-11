@@ -197,6 +197,8 @@ export interface ScanHostBlock {
     duration_ms: number;
     stderr_excerpt: string;
     note: string;
+    coverage?: string;
+    coverage_reason?: string;
   }[] | null;
   tool_versions: Record<string, string> | null;
   assets: { kind: string; value: string; source: string; in_scope: boolean; approved: boolean }[];
@@ -217,6 +219,12 @@ export interface ScanHostBlock {
     value: string;
     source_tool: string;
     asset_value: string | null;
+  }[];
+  coverage: {
+    stage: string;
+    check_family: string;
+    outcome: string;
+    reason: string;
   }[];
 }
 

@@ -150,6 +150,22 @@ a domain registration expiring within 30 days (or already lapsed) becomes a find
 
 ---
 
+## Offline CVE intelligence
+
+| Variable | Default | Notes |
+|---|---|---|
+| `TRASHSCAN_VULNINTEL_SNAPSHOT_PATH` | `/app/app/data/vulnintel_snapshot.json` | Path to the local, versioned CVE snapshot (PRD v2 §9). A sanitized sample ships in the image; point this at an imported real NVD/KEV/EPSS/vendor snapshot to use live data. |
+| `TRASHSCAN_VULNINTEL_STALE_HOURS` | `72` | A snapshot older than this is shown with a stale warning. |
+
+Unlike external OSINT above, CVE intelligence is **fully offline**: candidate CVE
+correlation reads only this local snapshot and the product/version evidence already
+collected, and **never transmits a target IP, hostname, or evidence** for enrichment. A
+missing or stale snapshot is reported as such (via `GET /api/vulnintel/status`) and is
+never treated as "zero risk". Candidate associations are kept separate from the actionable
+finding/issue counts and always require manual validation.
+
+---
+
 ## Enabling TLS (summary)
 
 1. Put a TLS-terminating reverse proxy (e.g. Caddy) in front of port 8080.

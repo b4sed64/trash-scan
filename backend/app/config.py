@@ -105,6 +105,13 @@ class Settings(BaseSettings):
     katana_max_pages_per_host: int = 25
     katana_crawl_duration_seconds: int = 60
 
+    # Offline CVE intelligence (PRD v2 §9, Phase 11). The snapshot is a local,
+    # versioned file; no scan performs an online lookup or transmits a target
+    # identifier for enrichment. An administrator may import a fresh snapshot.
+    vulnintel_snapshot_path: str = "/app/app/data/vulnintel_snapshot.json"
+    # Feeds older than this are shown with a stale warning (§9.2 proposes 72 h).
+    vulnintel_stale_hours: int = 72
+
     def resolver_list(self) -> list[str]:
         return [r.strip() for r in self.dns_resolvers.split(",") if r.strip()]
 

@@ -31,6 +31,7 @@ from ..services import oplog
 from ..services.coverage import coverage_outcome, record_coverage
 from ..services.findings import record_findings
 from ..services.issues import derive_issues
+from ..services.vulnintel import derive_candidates
 from ..services.normalization import apply_stage_outputs
 from ..services.scope_db import evaluate_target_scope, load_private_cidrs
 
@@ -302,6 +303,7 @@ def execute(execution_id: str, *, enqueue=None) -> str:  # noqa: C901 - lifecycl
         db.flush()
         comparison_service.build_and_store(db, ex)
         derive_issues(db, ex)
+        derive_candidates(db, ex)
         oplog.log(db, "INFO",
                   f"execution completed: {summary}", target_id=ex.target_id,
                   execution_id=ex.id, correlation_id=ex.correlation_id)

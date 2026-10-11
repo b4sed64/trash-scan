@@ -238,6 +238,17 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   no-credential-testing boundary, PRD v2 §8.2 / F1.)
   All finding functions are imported by the fake adapters too, so offline
   runs and the test suite exercise the identical rule logic real scans use.
+- **Canonical issues (`services/issues.py`, PRD v2 Phase 9).** Findings — including
+  equivalent detectors from different tools (httpx `-tls-grab` and nmap `ssl-cert`
+  share TLS rule-ids) — roll up into canonical `Issue` rows with per-surface
+  `Occurrence`s. It is a lossless, reversible projection of the findings; a scan
+  forward-derives it, and `backfill_all` rebuilds it idempotently for existing data.
+- **Offline CVE intelligence (`services/vulnintel.py`, PRD v2 Phase 11).** From a
+  local versioned snapshot only — no online lookup, no target identifier ever
+  transmitted — product/version evidence is matched to `CandidateAssociation` rows
+  (conservative: `CANDIDATE`/`UNKNOWN`, never auto-`SUPPORTED`), kept separate from
+  findings/issues so they never inflate the actionable count. Priority is a
+  deterministic §11.1 lane + reason codes, not a synthetic score.
 
 ---
 

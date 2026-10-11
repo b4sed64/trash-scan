@@ -1,0 +1,39 @@
+{
+  "provider": "trashscan-sample-offline",
+  "schema_version": "1",
+  "fetched_at": "2026-01-01T00:00:00Z",
+  "effective_at": "2026-01-01T00:00:00Z",
+  "_comment": "Sanitized, bundled OFFLINE sample snapshot (PRD v2 §9.2). Illustrative records only - replace via an administrator-enabled import with real NVD/KEV/EPSS/vendor data. No scan ever performs an online lookup or transmits a target identifier for enrichment.",
+  "records": [
+    {
+      "cve": "CVE-SAMPLE-0001",
+      "product": "nginx",
+      "version_start_incl": "0",
+      "version_end_excl": "1.21.0",
+      "cpe": "cpe:2.3:a:f5:nginx:*:*:*:*:*:*:*:*",
+      "cvss_version": "3.1",
+      "cvss_score": 7.5,
+      "kev": false,
+      "epss_score": 0.04,
+      "epss_percentile": 0.60,
+      "advisory": "https://sample-vendor.invalid/advisories/CVE-SAMPLE-0001",
+      "required_config": "",
+      "title": "Sample nginx pre-1.21 condition (illustrative)"
+    },
+    {
+      "cve": "CVE-SAMPLE-0002",
+      "product": "openssh",
+      "version_start_incl": "0",
+      "version_end_excl": "9.0",
+      "cpe": "cpe:2.3:a:openbsd:openssh:*:*:*:*:*:*:*:*",
+      "cvss_version": "3.1",
+      "cvss_score": 9.8,
+      "kev": true,
+      "epss_score": 0.42,
+      "epss_percentile": 0.95,
+      "advisory": "https://sample-vendor.invalid/advisories/CVE-SAMPLE-0002",
+      "required_config": "password authentication enabled",
+      "title": "Sample OpenSSH KEV condition (illustrative)"
+    }
+  ]
+}

@@ -13,8 +13,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0008_port_set_protocol` | `port_sets.protocol` (`TCP`/`UDP`, default `TCP`, backfilled via `server_default`) — see "Port profiles" below. |
 | `0009_coverage_ledger` | `coverage_entries` table — per-execution, per-check-family coverage records (PRD v2 Phase 8). See "Coverage ledger" below. |
 | `0010_canonical_issues` | `issues` + `occurrences` tables — canonical issue identities projected from findings (PRD v2 Phase 9). Tables only; backfill is a separate idempotent service. See "Canonical issues" below. |
+| `0011_candidate_associations` | `candidate_associations` table — offline candidate CVE associations, kept separate from findings/issues (PRD v2 Phase 11). See "Offline CVE intelligence" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0010_canonical_issues`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0011_candidate_associations`.
 
 ## One scan, many targets, manual start
 
@@ -58,6 +59,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/issues` | Canonical issues across visible targets (PRD v2 Phase 9), each rolling up one or more findings, ranked by severity. |
 | `GET /api/issues/{id}` | One canonical issue: per-surface occurrence history and the legacy finding ids it aliases. |
 | `POST /api/admin/issues/backfill` | Administrator-only, audited (`ISSUES_BACKFILLED`). Rebuilds the canonical projection from existing findings; idempotent and lossless. |
+| `GET /api/vulnintel/status` | Local CVE snapshot provider, effective date, schema version and stale flag (PRD v2 Phase 11). Offline; no target data sent. |
+| `GET /api/targets/{id}/candidates` | Candidate CVE associations for a target, ranked by priority lane. Separate from the actionable finding/issue counts. |
+| `POST /api/admin/vulnintel/refresh` | Administrator-only, audited (`ENRICHMENT_UPDATED`). Re-derives candidates for all completed scans from the current snapshot without a rescan. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -65,7 +69,7 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 ## New audit actions
 
 `PASSWORD_CHANGED`, `PASSWORD_RESET`, `PORT_SET_ADDED`, `PORT_SET_REMOVED`, `SCAN_STARTED`,
-`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`. Failed logins
+`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`, `ENRICHMENT_UPDATED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -360,6 +364,45 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Offline CVE intelligence (PRD v2 Phase 11)
+
+Candidate CVE correlation, entirely offline. Intelligence comes from a local,
+versioned snapshot file (`backend/app/data/vulnintel_snapshot.json`, a sanitized
+sample; replace via an administrator import). **No scan performs an online
+lookup, and no target IP/hostname/evidence is ever transmitted for enrichment** —
+matching is a pure function over product/version strings we already hold.
+
+- **`CandidateAssociation`** (migration `0011`) links a product/version seen on a
+  target to a snapshot CVE record. It is **separate from findings/issues** and
+  never inflates the actionable finding count — a candidate means "might be
+  affected, pending reviewed applicability."
+- **Conservative matching** (`services/vulnintel.py`): a version in the affected
+  range is `CANDIDATE` (patch/backport state unverified — an upstream version
+  never establishes patch state); product-only is `UNKNOWN`; out-of-range is
+  `NOT_APPLICABLE` and dropped. Nothing is ever auto-promoted to `SUPPORTED`;
+  that requires reviewed evidence (Phase 12).
+- **Deterministic priority (§11.1)** — `priority_lane()` returns a lane
+  (`VALIDATE_URGENT` / `VALIDATE` / `P1`–`P4`) plus reason codes, never a
+  synthetic 0–100 score. KEV candidates → `VALIDATE_URGENT`; other candidates →
+  `VALIDATE`; UNKNOWN context → validation, never silently low. Exposure and
+  business criticality are administrator-set per target (deferred — default
+  UNKNOWN, never inferred from an RFC1918 address).
+- **Snapshot freshness** (§9.2): provider, effective date, schema version and a
+  stale flag (default 72 h). Missing/failed data is reported as `MISSING`/stale,
+  not treated as zero risk.
+- **New API:** `GET /api/vulnintel/status` (snapshot freshness),
+  `GET /api/targets/{id}/candidates` (candidates for a target),
+  `POST /api/admin/vulnintel/refresh` (admin, audited `ENRICHMENT_UPDATED` —
+  re-derives from the current snapshot without a rescan, not changing any scan's
+  observation time). New scans derive candidates automatically.
+- KEV/EPSS/CVSS fields are stored per association. KEV ≠ verified on this target;
+  EPSS is 30-day exploitation-activity likelihood for the CVE, not a prediction
+  about this asset; absence from KEV is not evidence of safety.
+
+Deferred: administrator-set per-target exposure/criticality fields, frozen
+report snapshots, and real NVD/KEV/EPSS import tooling (the snapshot schema and
+offline path are in place; only sanitized sample data ships).
+
 ## Phase 10 — contextual accuracy (in progress)
 
 First work unit (finding **F1**): `snmp-sysdescr` is **disabled** under the
@@ -481,7 +524,12 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **199 tests**. Post-MVP additions:
+The suite is now **214 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+`test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
+`test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
+the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
+end-to-end scan deriving candidates without inflating the finding count).
+Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host

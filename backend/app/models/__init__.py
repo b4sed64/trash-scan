@@ -11,6 +11,7 @@ import uuid
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     JSON,
@@ -504,6 +505,55 @@ class Occurrence(Base):
 
     __table_args__ = (
         UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence_issue"),
+    )
+
+
+class CandidateAssociation(Base):
+    """A candidate CVE association for a product/version seen on a target
+    (PRD v2 §9, Phase 11).
+
+    Kept deliberately separate from canonical Issues: a candidate is a "this
+    product/version *might* be affected, pending reviewed applicability" link and
+    must never inflate the actionable finding count. Matching is conservative —
+    an auto-match stays ``CANDIDATE`` and is never promoted to ``SUPPORTED``
+    without reviewed evidence, because an upstream version alone does not
+    establish patch state (vendor backports, distro revisions, banner masking).
+
+    All intelligence comes from a local offline snapshot; no target identifier or
+    evidence is ever transmitted for enrichment.
+    """
+
+    __tablename__ = "candidate_associations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False,
+                                           index=True)
+    issue_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("issues.id"))
+    cve_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    product: Mapped[str] = mapped_column(String(128), default="")
+    version_evidence: Mapped[str] = mapped_column(String(128), default="")
+    matched_cpe: Mapped[str] = mapped_column(String(256), default="")
+    version_range: Mapped[str] = mapped_column(String(128), default="")
+    # CANDIDATE | SUPPORTED | NOT_APPLICABLE | UNKNOWN
+    applicability: Mapped[str] = mapped_column(String(16), nullable=False, default="CANDIDATE")
+    confidence: Mapped[str] = mapped_column(String(16), default="LOW")
+    cvss_version: Mapped[str] = mapped_column(String(8), default="")
+    cvss_score: Mapped[float | None] = mapped_column(Float)
+    kev: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    epss_score: Mapped[float | None] = mapped_column(Float)
+    epss_percentile: Mapped[float | None] = mapped_column(Float)
+    advisory_source: Mapped[str] = mapped_column(String(256), default="")
+    match_rationale: Mapped[str] = mapped_column(String(256), default="")
+    applicability_rule_version: Mapped[str] = mapped_column(String(16), default="")
+    # Priority lane + reason codes (PRD v2 §11.1); rules, not a synthetic score.
+    priority_lane: Mapped[str] = mapped_column(String(20), default="")
+    priority_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    snapshot_version: Mapped[str] = mapped_column(String(32), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("target_id", "cve_id", "product", "version_evidence",
+                         name="uq_candidate_association"),
     )
 
 

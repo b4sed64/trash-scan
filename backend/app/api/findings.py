@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import (
+    CandidateAssociation,
     Finding,
     FindingSighting,
     Issue,
@@ -19,6 +20,7 @@ from ..services import AuditService, AuthorizationService
 from ..services.authorization_service import PermissionDenied
 from ..services.findings import severity_rank
 from ..services.issues import backfill_all
+from ..services import vulnintel
 from .deps import get_current_user, require_admin, require_csrf
 
 router = APIRouter(tags=["findings"])
@@ -198,6 +200,63 @@ def backfill_issues(admin: User = Depends(require_admin), db: Session = Depends(
     )
     db.commit()
     return totals
+
+
+# --- offline CVE intelligence (PRD v2 Phase 11) --------------------------
+
+@router.get("/api/vulnintel/status")
+def vulnintel_status(user: User = Depends(get_current_user)) -> dict:
+    """Local snapshot provider, effective date and freshness (§9.2). Missing or
+    stale data is reported as such — never silently treated as zero risk."""
+    return vulnintel.snapshot_status()
+
+
+def _candidate_dto(c: CandidateAssociation) -> dict:
+    return {
+        "id": c.id, "cve_id": c.cve_id, "product": c.product,
+        "version_evidence": c.version_evidence, "matched_cpe": c.matched_cpe,
+        "version_range": c.version_range, "applicability": c.applicability,
+        "confidence": c.confidence, "cvss_version": c.cvss_version, "cvss_score": c.cvss_score,
+        "kev": c.kev, "epss_score": c.epss_score, "epss_percentile": c.epss_percentile,
+        "advisory_source": c.advisory_source, "match_rationale": c.match_rationale,
+        "priority_lane": c.priority_lane, "priority_reasons": c.priority_reasons,
+        "applicability_rule_version": c.applicability_rule_version,
+        "snapshot_version": c.snapshot_version,
+        # Candidates are not confirmed findings — they require manual validation.
+        "requires_validation": True,
+    }
+
+
+@router.get("/api/targets/{target_id}/candidates")
+def list_candidates(target_id: str, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)) -> list[dict]:
+    """Candidate CVE associations for a target. These are separate from the
+    actionable finding/issue counts: a candidate means "might be affected,
+    pending reviewed applicability", not a confirmed vulnerability."""
+    _access_or_404(db, user, target_id)
+    rows = db.execute(
+        select(CandidateAssociation).where(CandidateAssociation.target_id == target_id)
+    ).scalars().all()
+    lane_order = {"VALIDATE_URGENT": 0, "VALIDATE": 1, "P1": 2, "P2": 3, "P3": 4, "P4": 5}
+    rows.sort(key=lambda c: (lane_order.get(c.priority_lane, 9), -(c.cvss_score or 0), c.cve_id))
+    return [_candidate_dto(c) for c in rows]
+
+
+@router.post("/api/admin/vulnintel/refresh", dependencies=[Depends(require_csrf)])
+def refresh_vulnintel(admin: User = Depends(require_admin),
+                      db: Session = Depends(get_db)) -> dict:
+    """Re-derive candidate associations for all completed scans from the current
+    local snapshot (§9.2: a new snapshot may re-prioritize without a rescan).
+    Audited as ENRICHMENT_UPDATED; does not change any scan's observation time."""
+    result = vulnintel.backfill_candidates(db)
+    AuditService.append(
+        db, actor=f"user:{admin.username}", action="ENRICHMENT_UPDATED",
+        object_type="candidate_association", object_id="*",
+        payload={"candidates": result["candidates"], "executions": result["executions"],
+                 "snapshot": result["snapshot"]},
+    )
+    db.commit()
+    return result
 
 
 def _comparison_dto(c: ScanComparison) -> dict:

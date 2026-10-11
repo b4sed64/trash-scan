@@ -8,10 +8,12 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..db import get_db
 from ..models import (
     CandidateAssociation,
     CoverageEntry,
+    ExploitabilityAssessment,
     Finding,
     FindingSighting,
     Issue,
@@ -25,7 +27,7 @@ from ..services import AuditService, AuthorizationService
 from ..services.authorization_service import PermissionDenied
 from ..services.findings import severity_rank
 from ..services.issues import backfill_all
-from ..services import review, vulnintel
+from ..services import exploitability, review, vulnintel
 from .deps import get_current_user, require_admin, require_csrf
 
 router = APIRouter(tags=["findings"])
@@ -446,6 +448,69 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
             "A clean result only means 'not observed' where coverage shows the family was ASSESSED.",
         ],
     }
+
+
+# --- exploitability assessment (PRD v2 Phase 13, offline only) -----------
+
+class DryRunBody(BaseModel):
+    params: dict = {}
+
+
+def _assessment_enabled() -> None:
+    if not get_settings().enable_exploitability_assessment:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "exploitability assessment is disabled")
+
+
+@router.get("/api/proof/modules")
+def list_proof_modules(user: User = Depends(get_current_user)) -> dict:
+    """The reviewed proof-module registry. RESEARCH_ONLY modules are visible
+    references; ADMITTED modules may be assessed offline. This never executes
+    anything and exposes no framework console."""
+    _assessment_enabled()
+    mods = [
+        {"module_id": m.get("module_id"), "admission_state": m.get("admission_state"),
+         "claim": m.get("claim", ""), "check_classification": m.get("check_classification", ""),
+         "issue_types": m.get("issue_types") or [], "compatible": m.get("compatible") or {},
+         "expected_effect": m.get("expected_effect", "")}
+        for m in exploitability.list_modules()
+    ]
+    return {"modules": mods, "active_execution_enabled": False,
+            "note": "Assessment is analytical only. Active checks and proof execution are "
+                    "gated by separate flags, plans, attestations, approvals and lab gates."}
+
+
+@router.get("/api/issues/{issue_id}/exploitability")
+def issue_exploitability(issue_id: str, user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> list[dict]:
+    """Offline assessments for an issue — per-prerequisite state and derived
+    eligibility. ELIGIBLE_FOR_PROOF means a plan may be requested, never that
+    execution is authorized."""
+    _assessment_enabled()
+    issue = _issue_or_404(db, user, issue_id)
+    rows = db.execute(
+        select(ExploitabilityAssessment).where(ExploitabilityAssessment.issue_id == issue.id)
+    ).scalars().all()
+    return [{
+        "module_id": a.module_id, "module_admission_state": a.module_admission_state,
+        "eligibility": a.eligibility, "prerequisites": a.prerequisites,
+        "expected_effect": a.expected_effect, "next_action": a.next_action,
+        "freshness_deadline": a.freshness_deadline, "assessment_version": a.assessment_version,
+        "assessed_at": a.assessed_at,
+    } for a in rows]
+
+
+@router.post("/api/proof/modules/{module_id:path}/dry-run",
+             dependencies=[Depends(require_csrf)])
+def proof_module_dry_run(module_id: str, body: DryRunBody,
+                         user: User = Depends(get_current_user)) -> dict:
+    """Validate a module's parameters/policy/cost without sending any target
+    traffic. Purely a schema/policy check — it does not run the module."""
+    _assessment_enabled()
+    module = next((m for m in exploitability.list_modules()
+                   if m.get("module_id") == module_id), None)
+    if module is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "module not found")
+    return exploitability.dry_run(module, body.params)
 
 
 def _comparison_dto(c: ScanComparison) -> dict:

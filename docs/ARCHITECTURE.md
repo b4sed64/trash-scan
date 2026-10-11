@@ -256,6 +256,14 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   recorded manual evidence — never a bare clean scan; re-observation reopens a
   verified issue. A redacted JSON export (`/api/targets/{id}/report.json`)
   preserves candidates, excluded dispositions (with totals) and latest coverage.
+- **Exploitability assessment (`services/exploitability.py`, PRD v2 §21/Phase 13).**
+  Offline and analytical only — no target contact, no execution. Maps an issue to a
+  reviewed module manifest and records per-prerequisite state
+  (`SATISFIED`/`MISSING`/`CONTRADICTED`/`UNKNOWN`/`STALE`) and a derived eligibility
+  (`NEEDS_EVIDENCE`/`INCOMPATIBLE`/`BLOCKED_POLICY`/`ELIGIBLE_FOR_PROOF`). Lab-fixture
+  and snapshot prerequisites are unsatisfiable until the lab phases, so nothing is
+  `ELIGIBLE_FOR_PROOF` yet. Active checks/proof/sessions stay behind `enable_lab_*`
+  flags (all off) plus their own plans, attestations, approvals and real-lab gates.
 
 ---
 

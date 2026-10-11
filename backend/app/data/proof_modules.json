@@ -1,0 +1,48 @@
+{
+  "schema_version": "1",
+  "_comment": "Sample reviewed proof-module manifests (PRD v2 §21.3). RESEARCH_ONLY entries are visible references, never executable. ADMITTED entries may be ASSESSED offline; execution is gated separately by TRASHSCAN_ENABLE_LAB_* flags, a distinct proof plan + attestation + fresh administrator approval, and real-lab/recovery gates (Phases 15-16). Shipping a manifest is NOT admission of executable modules for a real engagement — a human admits actual module revisions with their effect/recovery contracts. No module here performs any action in Phase 13.",
+  "modules": [
+    {
+      "module_id": "sample/http-exposed-config-read",
+      "admission_state": "ADMITTED",
+      "source": "trash-scan-reviewed",
+      "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "framework": "none",
+      "dependency_digests": {},
+      "reviewer": "trash-scan",
+      "review_date": "2026-01-01",
+      "issue_types": ["nuclei:trashscan-git-config-exposure", "nuclei:trashscan-env-file-exposure"],
+      "claim": "Demonstrates that an exposed configuration file is readable by reading a single disposable administrator-seeded marker value, then exits.",
+      "compatible": {"product": "", "service": "http", "protocol": "tcp", "port": 80},
+      "check_classification": "active-read-only",
+      "prerequisites": [
+        {"key": "reachable_service", "kind": "service_reachable",
+         "params": {"protocol": "tcp"}, "description": "Approved HTTP service reachable on the surface"},
+        {"key": "lab_fixture_registered", "kind": "lab_fixture",
+         "description": "Target bound to a registered, isolated lab fixture (Phase 15)"},
+        {"key": "snapshot_ready", "kind": "snapshot",
+         "description": "Recoverable snapshot / restore readiness verified (Phase 15)"}
+      ],
+      "typed_inputs": {
+        "marker": {"type": "string", "required": true, "max_length": 64}
+      },
+      "expected_effect": "Reads one disposable seeded marker; no writes, no secrets, no shell; single request; exits with a fixed bounded result.",
+      "max_requests": 1,
+      "runtime_ceiling_seconds": 30,
+      "lab_fixture": "seeded-web-fixture",
+      "cleanup": "none (read-only marker)",
+      "recovery": "snapshot restore"
+    },
+    {
+      "module_id": "research/reference-only-example",
+      "admission_state": "RESEARCH_ONLY",
+      "source": "external-reference",
+      "reviewer": "trash-scan",
+      "review_date": "2026-01-01",
+      "issue_types": [],
+      "claim": "Reference material only; visible for context, never executable.",
+      "check_classification": "metadata-only",
+      "prerequisites": []
+    }
+  ]
+}

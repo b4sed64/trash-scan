@@ -157,12 +157,31 @@ a domain registration expiring within 30 days (or already lapsed) becomes a find
 | `TRASHSCAN_VULNINTEL_SNAPSHOT_PATH` | `/app/app/data/vulnintel_snapshot.json` | Path to the local, versioned CVE snapshot (PRD v2 §9). A sanitized sample ships in the image; point this at an imported real NVD/KEV/EPSS/vendor snapshot to use live data. |
 | `TRASHSCAN_VULNINTEL_STALE_HOURS` | `72` | A snapshot older than this is shown with a stale warning. |
 
-Unlike external OSINT above, CVE intelligence is **fully offline**: candidate CVE
-correlation reads only this local snapshot and the product/version evidence already
-collected, and **never transmits a target IP, hostname, or evidence** for enrichment. A
-missing or stale snapshot is reported as such (via `GET /api/vulnintel/status`) and is
-never treated as "zero risk". Candidate associations are kept separate from the actionable
-finding/issue counts and always require manual validation.
+CVE intelligence is **fully offline**: candidate CVE correlation reads only this local
+snapshot and the product/version evidence already collected, and **never transmits a
+target IP, hostname, or evidence** for enrichment. A missing or stale snapshot is reported
+as such (via `GET /api/vulnintel/status`) and is never treated as "zero risk". Candidate
+associations are kept separate from the actionable finding/issue counts and always require
+manual validation.
+
+---
+
+## Exploitability assessment (PRD v2 §21)
+
+| Variable | Default | Notes |
+|---|---|---|
+| `TRASHSCAN_ENABLE_EXPLOITABILITY_ASSESSMENT` | `true` | Offline, analytical issue→module assessment after a scan. No target contact, no execution. |
+| `TRASHSCAN_ENABLE_LAB_CHECKS` | `false` | (Future) active prerequisite checks against a lab surface. Off; requires its own plan/attestation/approval. |
+| `TRASHSCAN_ENABLE_LAB_PROOF` | `false` | (Future) controlled one-shot proof against a registered lab fixture. Off; requires proof plan + approval + lab/recovery gates. |
+| `TRASHSCAN_ENABLE_GUIDED_SESSIONS` | `false` | (Future) guided session operations. Off. |
+| `TRASHSCAN_ENABLE_LAB_TERMINAL` | `false` | (Future) administrator lab-terminal mode. Off. |
+| `TRASHSCAN_PROOF_MODULES_PATH` | `/app/app/data/proof_modules.json` | Reviewed module manifest file. A sanitized sample ships; RESEARCH_ONLY entries are never executable. |
+
+**A feature flag alone never approves a job.** Only offline assessment is enabled;
+every active capability is off by default and, when later implemented, additionally
+requires a separate plan, typed attestation, a fresh administrator approval, and
+real-lab/recovery gates. In this release nothing in this section performs any active
+operation — assessment is purely analytical.
 
 ---
 

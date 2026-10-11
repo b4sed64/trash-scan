@@ -15,8 +15,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0010_canonical_issues` | `issues` + `occurrences` tables — canonical issue identities projected from findings (PRD v2 Phase 9). Tables only; backfill is a separate idempotent service. See "Canonical issues" below. |
 | `0011_candidate_associations` | `candidate_associations` table — offline candidate CVE associations, kept separate from findings/issues (PRD v2 Phase 11). See "Offline CVE intelligence" below. |
 | `0012_issue_review` | Issue review/remediation columns (validation + remediation state, owner, due date, closure metadata) and a `risk_exceptions` table (PRD v2 Phase 12). See "Issue review & remediation" below. |
+| `0013_exploitability_assessment` | `exploitability_assessments` table — offline, analytical issue→module assessments (PRD v2 Phase 13). No execution. See "Exploitability assessment" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0012_issue_review`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0013_exploitability_assessment`.
 
 ## One scan, many targets, manual start
 
@@ -69,6 +70,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `POST /api/issues/{id}/accept-risk` | Administrator-only. Records a `risk_exceptions` row (reason + expiry required) and sets `RISK_ACCEPTED`; audited `RISK_ACCEPTED`. |
 | `POST /api/issues/{id}/close` | Administrator-only. Marks `RESOLVED_VERIFIED` only with a qualifying negative or manual evidence; audited `ISSUE_CLOSED`. 409 if neither is present. |
 | `GET /api/targets/{id}/report.json` | Redacted JSON export preserving candidates, excluded dispositions (with totals) and latest coverage; audited `REPORT_EXPORTED`. |
+| `GET /api/proof/modules` | Reviewed proof-module registry (admitted + research-only). Offline; exposes no framework console. Gated by `enable_exploitability_assessment`. |
+| `GET /api/issues/{id}/exploitability` | Offline exploitability assessment(s) for an issue — per-prerequisite state + derived eligibility. Never authorizes execution. |
+| `POST /api/proof/modules/{id}/dry-run` | Validate a module's params/policy/cost with no target traffic. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -373,6 +377,39 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Exploitability assessment (PRD v2 Phase 13 — offline, analytical only)
+
+The first slice of the §21 exploitability work. It is **entirely offline: no
+target contact and no execution** — not even a framework "check". It maps a
+canonical issue to a reviewed module manifest and evaluates each prerequisite
+against evidence already collected.
+
+- **Reviewed module registry** (`backend/app/data/proof_modules.json`,
+  `services/exploitability.py`). Each module is a reviewed contract (§21.3):
+  admission state (`ADMITTED` / `RESEARCH_ONLY` / disabled), issue mapping,
+  claim, compatibility, `check_classification`, typed inputs, expected effect,
+  prerequisites, lab-fixture/cleanup/recovery. RESEARCH_ONLY modules are visible
+  references and are never executable. Shipping the manifest is **not** admission
+  of executable modules for a real engagement — a human admits actual revisions.
+- **Per-prerequisite states** (§21.4): `SATISFIED` / `MISSING` / `CONTRADICTED` /
+  `UNKNOWN` / `STALE`, each with provenance. Overall eligibility is derived
+  separately: `NEEDS_EVIDENCE` / `INCOMPATIBLE` / `BLOCKED_POLICY` /
+  `ELIGIBLE_FOR_PROOF`. Crucially, the lab-fixture and snapshot prerequisites
+  cannot be satisfied until Phase 15, so **nothing is `ELIGIBLE_FOR_PROOF` in
+  this phase** — the assessment explains exactly what is missing.
+  `ELIGIBLE_FOR_PROOF` would mean "a plan may be requested", never that
+  execution is authorized or succeeded.
+- **Dry run** validates a module's parameter schema, policy and cost **without
+  sending any target traffic**.
+- **Feature flags** (`services/config.py`): `enable_exploitability_assessment`
+  defaults **on** (offline, safe); `enable_lab_checks`, `enable_lab_proof`,
+  `enable_guided_sessions`, `enable_lab_terminal` all default **off**. A flag
+  alone never approves a job — active capabilities additionally require their own
+  plan, attestation, fresh approval and real-lab/recovery gates (Phases 14-16+).
+- New API (read/validate only, gated by the assessment flag): `GET /api/proof/modules`,
+  `GET /api/issues/{id}/exploitability`, `POST /api/proof/modules/{id}/dry-run`.
+  New scans derive assessments automatically after normalization.
+
 ## Issue review & remediation (PRD v2 Phase 12)
 
 The canonical issue now carries three **independent** review dimensions (§12.1):
@@ -568,7 +605,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **224 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **230 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -576,7 +613,11 @@ end-to-end scan deriving candidates without inflating the finding count; Phase 1
 added `test_review.py` — validation/assignment transitions, risk-exception
 reason/expiry and overdue expiry, closure refused without a qualifying negative
 or manual evidence, reopen-after-verified-closure, scanner-cannot-close, and the
-redacted JSON export preserving excluded/candidate/coverage data).
+redacted JSON export preserving excluded/candidate/coverage data; Phase 13 added
+`test_exploitability.py` — lab prerequisites blocking eligibility, research-only
+modules BLOCKED_POLICY, eligible only when all prerequisites satisfied, dry-run
+schema validation without traffic, and an end-to-end scan deriving an assessment
+that is never ELIGIBLE_FOR_PROOF in this phase).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

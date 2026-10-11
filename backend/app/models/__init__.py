@@ -522,6 +522,40 @@ class RiskException(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class ExploitabilityAssessment(Base):
+    """Offline exploitability assessment of an issue against a reviewed module
+    (PRD v2 §21, Phase 13). Purely analytical — no target contact and no
+    execution. It records, per prerequisite, whether evidence is SATISFIED /
+    MISSING / CONTRADICTED / UNKNOWN / STALE, and derives an eligibility of
+    NEEDS_EVIDENCE / INCOMPATIBLE / BLOCKED_POLICY / ELIGIBLE_FOR_PROOF.
+    ELIGIBLE_FOR_PROOF means a plan *may be requested*, never that execution is
+    authorized or succeeded — active capabilities stay behind their own flags,
+    approvals and real-lab gates.
+    """
+
+    __tablename__ = "exploitability_assessments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False,
+                                           index=True)
+    issue_id: Mapped[str] = mapped_column(String(36), ForeignKey("issues.id"), nullable=False,
+                                          index=True)
+    module_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    module_admission_state: Mapped[str] = mapped_column(String(16), default="")
+    # NEEDS_EVIDENCE | INCOMPATIBLE | BLOCKED_POLICY | ELIGIBLE_FOR_PROOF
+    eligibility: Mapped[str] = mapped_column(String(20), nullable=False, default="NEEDS_EVIDENCE")
+    prerequisites: Mapped[list] = mapped_column(JSON, default=list)
+    expected_effect: Mapped[str] = mapped_column(String(512), default="")
+    next_action: Mapped[str] = mapped_column(String(256), default="")
+    freshness_deadline: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    assessment_version: Mapped[str] = mapped_column(String(16), default="")
+    assessed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("issue_id", "module_id", name="uq_exploitability_assessment"),
+    )
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

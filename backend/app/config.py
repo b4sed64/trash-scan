@@ -112,6 +112,20 @@ class Settings(BaseSettings):
     # Feeds older than this are shown with a stale warning (§9.2 proposes 72 h).
     vulnintel_stale_hours: int = 72
 
+    # Exploitability assessment / controlled lab proof (PRD v2 §21). Offline
+    # assessment ships enabled (analytical only, no target contact). Every active
+    # capability stays OFF by default and additionally requires its own plan,
+    # attestation, fresh administrator approval and real-lab/recovery gates —
+    # enabling a flag alone never approves a job.
+    enable_exploitability_assessment: bool = True
+    enable_lab_checks: bool = False
+    enable_lab_proof: bool = False
+    enable_guided_sessions: bool = False
+    enable_lab_terminal: bool = False
+    proof_modules_path: str = "/app/app/data/proof_modules.json"
+    # Assessment evidence older than this many hours is treated as STALE.
+    exploitability_evidence_stale_hours: int = 168
+
     def resolver_list(self) -> list[str]:
         return [r.strip() for r in self.dns_resolvers.split(",") if r.strip()]
 

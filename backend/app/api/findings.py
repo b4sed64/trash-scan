@@ -6,11 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Finding, FindingSighting, ScanComparison, ScanExecution, User
-from ..services import AuthorizationService
+from ..models import (
+    Finding,
+    FindingSighting,
+    Issue,
+    Occurrence,
+    ScanComparison,
+    ScanExecution,
+    User,
+)
+from ..services import AuditService, AuthorizationService
 from ..services.authorization_service import PermissionDenied
 from ..services.findings import severity_rank
-from .deps import get_current_user
+from ..services.issues import backfill_all
+from .deps import get_current_user, require_admin, require_csrf
 
 router = APIRouter(tags=["findings"])
 
@@ -113,6 +122,82 @@ def get_finding(finding_id: str, user: User = Depends(get_current_user),
         for s in sightings
     ]
     return dto
+
+
+# --- canonical issues (PRD v2 Phase 9) -----------------------------------
+
+@router.get("/api/issues")
+def list_issues(user: User = Depends(get_current_user), db: Session = Depends(get_db),
+                severity: str | None = Query(default=None),
+                status_filter: str | None = Query(default=None, alias="status")) -> list[dict]:
+    """Canonical issues across every target the requester may see. Each rolls up
+    one or more findings (including equivalent detectors from different tools)."""
+    visible = {t.id: t.value for t in AuthorizationService.visible_targets(db, user)}
+    rows = db.execute(
+        select(Issue).where(Issue.target_id.in_(list(visible) or ["__none__"]))
+    ).scalars().all()
+    if severity:
+        rows = [i for i in rows if i.severity == severity.upper()]
+    if status_filter:
+        rows = [i for i in rows if i.status == status_filter.upper()]
+    rows.sort(key=lambda i: (-severity_rank(i.severity), i.status != "OBSERVED", i.issue_type))
+    out = []
+    for i in rows:
+        occ_count = db.execute(
+            select(Occurrence).where(Occurrence.issue_id == i.id)
+        ).scalars().all()
+        out.append({
+            "id": i.id, "target_id": i.target_id, "target_value": visible.get(i.target_id, ""),
+            "issue_type": i.issue_type, "category": i.category, "title": i.title,
+            "severity": i.severity, "status": i.status,
+            "first_seen_at": i.first_seen_at, "last_seen_at": i.last_seen_at,
+            "occurrence_count": len(occ_count),
+            "requires_validation": True,
+        })
+    return out
+
+
+@router.get("/api/issues/{issue_id}")
+def get_issue(issue_id: str, user: User = Depends(get_current_user),
+              db: Session = Depends(get_db)) -> dict:
+    issue = db.get(Issue, issue_id)
+    if issue is None or not AuthorizationService.can_view_target(db, user, issue.target_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "issue not found")
+    occurrences = db.execute(
+        select(Occurrence).where(Occurrence.issue_id == issue_id)
+        .order_by(Occurrence.seen_at.asc())
+    ).scalars().all()
+    # The legacy finding ids this canonical issue aliases (dedup, order stable).
+    finding_ids: list[str] = []
+    for o in occurrences:
+        if o.finding_id not in finding_ids:
+            finding_ids.append(o.finding_id)
+    return {
+        "id": issue.id, "target_id": issue.target_id, "issue_type": issue.issue_type,
+        "category": issue.category, "title": issue.title, "severity": issue.severity,
+        "status": issue.status, "first_seen_at": issue.first_seen_at,
+        "last_seen_at": issue.last_seen_at, "requires_validation": True,
+        "legacy_finding_ids": finding_ids,
+        "occurrences": [
+            {"execution_id": o.execution_id, "finding_id": o.finding_id,
+             "asset_value": o.asset_value, "port": o.port, "severity": o.severity,
+             "seen_at": o.seen_at}
+            for o in occurrences
+        ],
+    }
+
+
+@router.post("/api/admin/issues/backfill", dependencies=[Depends(require_csrf)])
+def backfill_issues(admin: User = Depends(require_admin), db: Session = Depends(get_db)) -> dict:
+    """Rebuild the canonical issue projection from all existing findings.
+    Idempotent and lossless — the underlying findings are never modified."""
+    totals = backfill_all(db)
+    AuditService.append(
+        db, actor=f"user:{admin.username}", action="ISSUES_BACKFILLED",
+        object_type="issue", object_id="*", payload=totals,
+    )
+    db.commit()
+    return totals
 
 
 def _comparison_dto(c: ScanComparison) -> dict:

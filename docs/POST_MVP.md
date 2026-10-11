@@ -12,8 +12,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0007_scan_groups` | `scan_executions.scan_group_id` / `group_seq` / `group_size` and `scan_approvals.scan_group_id`, so one scan spans many targets. Existing rows are back-filled (each becomes a group of one). |
 | `0008_port_set_protocol` | `port_sets.protocol` (`TCP`/`UDP`, default `TCP`, backfilled via `server_default`) — see "Port profiles" below. |
 | `0009_coverage_ledger` | `coverage_entries` table — per-execution, per-check-family coverage records (PRD v2 Phase 8). See "Coverage ledger" below. |
+| `0010_canonical_issues` | `issues` + `occurrences` tables — canonical issue identities projected from findings (PRD v2 Phase 9). Tables only; backfill is a separate idempotent service. See "Canonical issues" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0009_coverage_ledger`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0010_canonical_issues`.
 
 ## One scan, many targets, manual start
 
@@ -54,6 +55,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `POST /api/scans/{scan_id}/stop` | Requester or administrator. Requests cancellation of every non-terminal execution in the group; 409 if the scan is already finished. |
 | `GET /api/scans/port-presets` | Built-in TCP port presets plus every administrator-defined port set (now including `protocol` and `note`), open to any authenticated user — the read path the Ports and Scans pages both use. |
 | `GET/POST/DELETE /api/admin/port-sets` | Administrator-only CRUD for port sets. `protocol` (`TCP`/`UDP`, default `TCP`) plus the spec are validated (`scan_profiles.parse_port_spec`, capped at 6000 ports) and canonicalised. |
+| `GET /api/issues` | Canonical issues across visible targets (PRD v2 Phase 9), each rolling up one or more findings, ranked by severity. |
+| `GET /api/issues/{id}` | One canonical issue: per-surface occurrence history and the legacy finding ids it aliases. |
+| `POST /api/admin/issues/backfill` | Administrator-only, audited (`ISSUES_BACKFILLED`). Rebuilds the canonical projection from existing findings; idempotent and lossless. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -61,7 +65,7 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 ## New audit actions
 
 `PASSWORD_CHANGED`, `PASSWORD_RESET`, `PORT_SET_ADDED`, `PORT_SET_REMOVED`, `SCAN_STARTED`,
-`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`. Failed logins
+`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -351,6 +355,32 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Canonical issues (PRD v2 Phase 9)
+
+A canonical **Issue** layer now sits above `Finding`, so detectors that find the
+*same* condition — including equivalent detectors from different tools — roll up
+into one issue per `(target, issue_type)`, while every underlying finding is
+preserved as an `Occurrence`.
+
+- **Equivalence is declared, never guessed** (`services/issues.py`). The default
+  is tool-qualified (`nuclei:trashscan-git-config-exposure`) so unrelated
+  detectors are never merged. The one declared cross-tool class is the TLS
+  family: httpx `-tls-grab` and nmap `ssl-cert` deliberately emit the same
+  rule-ids, so both collapse to e.g. `tls:tls-cert-expired` on the same surface.
+- **Lossless + reversible.** `Issue`/`Occurrence` (migration `0010`) are a
+  projection of `Finding`/`FindingSighting`, which are never modified.
+  `Occurrence.finding_id` is the legacy alias — an old finding id resolves to its
+  canonical issue. `backfill_all()` rebuilds the projection from all existing
+  executions and is idempotent (safe to run repeatedly); the migration itself is
+  tables-only, so downgrade drops only the projection.
+- **New API:** `GET /api/issues` (canonical issues across visible targets),
+  `GET /api/issues/{id}` (detail + per-surface occurrence history + the legacy
+  finding ids it aliases), and `POST /api/admin/issues/backfill` (admin, audited
+  as `ISSUES_BACKFILLED`). New scans forward-derive issues automatically; the
+  backfill endpoint projects pre-existing scans.
+- Issues UI grouping and issue-level comparison verdicts are the next increment
+  (the PRD orders the API before the UI).
+
 ## Coverage ledger (PRD v2 Phase 8)
 
 Added a per-execution **coverage ledger** so a "no findings" result can be told
@@ -384,7 +414,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **193 tests**. Post-MVP additions:
+The suite is now **199 tests**. Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /
 stop; passive scans wait for Start too; `GET /api/scans/{id}` surfaces per-host
@@ -410,7 +440,12 @@ approval options, rejected with 422 on a malformed spec, `None` when not specifi
 `ASSESSED`, incomplete → `COMPLETED_WITH_GAPS`, missing tool / exit-zero skip →
 `NOT_ASSESSED`, unconfirmed → `INCONCLUSIVE`); that a completed scan writes
 `CoverageEntry` rows; and the core guarantee that an exit-zero skipped stage
-cannot clear a previously-seen finding.
+cannot clear a previously-seen finding. `test_issues.py` (PRD v2 Phase 9): the
+equivalence mapping (shared TLS rule-ids collapse across httpx/nmap, unrelated
+detectors stay separate); equivalent detectors from two tools rolling into one
+Issue with both findings preserved as occurrences; distinct hosts staying
+distinct occurrences; and a lossless, idempotent backfill (occurrences ==
+sightings, stable across re-runs).
 
 ## Concurrency fix
 

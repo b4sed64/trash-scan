@@ -16,7 +16,7 @@ demonstration can reach `CODE_VERIFIED` but never a real-lab `ACCEPTED`.
 | 0–6 | Baseline recon + enrichment (original PRD) | `CODE_VERIFIED` | Audited below; raw-packet/UDP paths remain `LAB_PENDING`. |
 | 7 | Baseline verification & repository plan | `CODE_VERIFIED` | This document. |
 | 8 | Coverage ledger & evidence foundation | `CODE_VERIFIED` | `CoverageEntry` + migration `0009`; coverage-gated comparison; 193 tests. Observation-immutability hardening (evidence_ref/redaction column on `Observation`) tracked as a remaining Phase-8 refinement — the coverage ledger carries the bounded evidence_ref today. |
-| 9 | Canonical issues, comparison & legacy migration | `NOT_STARTED` | |
+| 9 | Canonical issues, comparison & legacy migration | `CODE_VERIFIED` | `Issue`/`Occurrence` + migration `0010`; explicit equivalent-detector mapping (shared TLS rule-ids collapse httpx+nmap); lossless idempotent `backfill_all`; issue list/detail API + admin backfill. UI grouping deferred to the next increment (PRD orders API before UI). 199 tests. |
 | 10 | Contextual accuracy & detection coverage | `NOT_STARTED` | Includes resolving the default-community conflict below. |
 | 11 | CVE intelligence & priority | `NOT_STARTED` | |
 | 12 | Review, focused retest & export | `NOT_STARTED` | Result-quality release gate. |
@@ -84,7 +84,7 @@ reference example of what Phase 11 must not reintroduce silently.
 | Phase | Needed | Current | Gap |
 |---|---|---|---|
 | 8 | `AssessmentUnit` + immutable `Observation` with per-check coverage, bounded evidence refs/redaction, `COMPLETED_WITH_GAPS`/`NOT_ASSESSED` | **Delivered:** `CoverageEntry` (per-execution/per-family, write-once, bounded `evidence_ref`), `coverage_outcome()` mapping incl. `INCONCLUSIVE`, coverage-gated comparison, API + UI surface. **Remaining:** evidence_ref/redaction column on `Observation` itself (today the ledger carries it). | Mostly closed |
-| 9 | Canonical `Issue`/`Occurrence` across tools, equivalent-detector mappings, legacy ID aliases, per-surface baselines | `Finding`+fingerprint+`FindingSighting`+`ScanComparison`; no cross-tool canonical grouping | Add Issue/Occurrence identities + lossless legacy backfill |
+| 9 | Canonical `Issue`/`Occurrence` across tools, equivalent-detector mappings, legacy ID aliases, per-surface baselines | **Delivered:** `Issue`/`Occurrence`, explicit equivalence map, `Occurrence.finding_id` legacy alias, lossless/idempotent `backfill_all`, list/detail/backfill API. **Remaining:** Issues UI grouping; issue-level (vs finding-level) comparison verdicts. | Mostly closed |
 | 10 | Correct TLS/DNS/header/**soft-404** interpretation; rule-family manifests; disable credential/community probes (F1) | `tls_findings`/`dns_posture_findings` exist; no soft-404; F1 open | Per-family fixtures; resolve F1 |
 | 11 | CVE `CandidateAssociation`, KEV/EPSS/CVSS, offline snapshots, deterministic explainable priority | none | New, offline-only (respect F2) |
 | 12 | Owner/due-date review, exceptions/expiry, verified closure/retest, redacted JSON export | `Finding.status` only | New review domain + JSON export |

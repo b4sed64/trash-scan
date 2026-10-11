@@ -451,6 +451,62 @@ class CoverageEntry(Base):
     )
 
 
+class Issue(Base):
+    """A canonical issue identity (PRD v2 §10, Phase 9).
+
+    Sits above :class:`Finding`: several findings — possibly from different tools
+    that detect the *same* condition (e.g. httpx ``-tls-grab`` and nmap
+    ``ssl-cert`` both reporting an expired certificate) — roll up into one Issue
+    per (target, issue_type). Equivalence is declared explicitly in
+    ``services/issues.py``; it never merges detectors that are not declared
+    equivalent. The underlying Finding/FindingSighting rows are untouched, so the
+    canonical layer is a lossless, reversible projection of them.
+    """
+
+    __tablename__ = "issues"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    # Canonical equivalence-class key, e.g. "tls:tls-cert-expired" or
+    # "nuclei:trashscan-git-config-exposure" (tool-qualified when not shared).
+    issue_type: Mapped[str] = mapped_column(String(192), nullable=False)
+    category: Mapped[str] = mapped_column(String(48), default="")
+    title: Mapped[str] = mapped_column(String(256), default="")
+    severity: Mapped[str] = mapped_column(String(10), nullable=False, default="INFO")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="OBSERVED")
+    first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("target_id", "issue_type", name="uq_issue"),
+    )
+
+
+class Occurrence(Base):
+    """One appearance of an :class:`Issue` on a specific surface in a specific
+    execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:
+    given an old Finding id you can resolve its canonical Issue through here, and
+    every FindingSighting maps to exactly one Occurrence (lossless backfill)."""
+
+    __tablename__ = "occurrences"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    issue_id: Mapped[str] = mapped_column(String(36), ForeignKey("issues.id"), nullable=False,
+                                          index=True)
+    execution_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("scan_executions.id"), nullable=False, index=True
+    )
+    finding_id: Mapped[str] = mapped_column(String(36), ForeignKey("findings.id"), nullable=False)
+    asset_value: Mapped[str] = mapped_column(String(256), default="")
+    port: Mapped[int | None] = mapped_column(Integer)
+    severity: Mapped[str] = mapped_column(String(10), default="INFO")
+    seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence"),
+    )
+
+
 class ScheduleOccurrence(Base):
     __tablename__ = "schedule_occurrences"
 

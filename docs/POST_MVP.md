@@ -16,8 +16,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0011_candidate_associations` | `candidate_associations` table — offline candidate CVE associations, kept separate from findings/issues (PRD v2 Phase 11). See "Offline CVE intelligence" below. |
 | `0012_issue_review` | Issue review/remediation columns (validation + remediation state, owner, due date, closure metadata) and a `risk_exceptions` table (PRD v2 Phase 12). See "Issue review & remediation" below. |
 | `0013_exploitability_assessment` | `exploitability_assessments` table — offline, analytical issue→module assessments (PRD v2 Phase 13). No execution. See "Exploitability assessment" below. |
+| `0014_lab_environment` | `lab_environments` / `lab_fixtures` / `recovery_records` — lab isolation/snapshot/recovery gating metadata (PRD v2 Phase 15). Fake controller; no execution. See "Lab isolation & recovery" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0013_exploitability_assessment`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0014_lab_environment`.
 
 ## One scan, many targets, manual start
 
@@ -73,6 +74,11 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/proof/modules` | Reviewed proof-module registry (admitted + research-only). Offline; exposes no framework console. Gated by `enable_exploitability_assessment`. |
 | `GET /api/issues/{id}/exploitability` | Offline exploitability assessment(s) for an issue — per-prerequisite state + derived eligibility. Never authorizes execution. |
 | `POST /api/proof/modules/{id}/dry-run` | Validate a module's params/policy/cost with no target traffic. |
+| `GET /api/lab/environments`, `POST /api/admin/lab/environments` | List / register lab environments (PRD v2 Phase 15). |
+| `POST /api/admin/lab/environments/{id}/verify-isolation` | Record an isolation verification (simulated with the fake controller; audited `LAB_ISOLATION_VERIFIED`). |
+| `GET /api/lab/fixtures`, `POST /api/admin/lab/fixtures` | List / register a fixture bound to a target. |
+| `POST /api/admin/lab/fixtures/{id}/rehearse-restore` | Record a restore rehearsal (simulated; audited `LAB_RESTORE_REHEARSED`). |
+| `GET /api/lab/fixtures/{id}/readiness` | Whether the fixture is proof-ready, and if not, exactly why. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -82,7 +88,8 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 `PASSWORD_CHANGED`, `PASSWORD_RESET`, `PORT_SET_ADDED`, `PORT_SET_REMOVED`, `SCAN_STARTED`,
 `SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`, `ENRICHMENT_UPDATED`,
 `ISSUE_VALIDATION_SET`, `ISSUE_ASSIGNED`, `ISSUE_MITIGATED`, `RISK_ACCEPTED`, `ISSUE_CLOSED`,
-`ISSUE_REOPENED`. Failed logins
+`ISSUE_REOPENED`, `LAB_ENVIRONMENT_REGISTERED`, `LAB_ISOLATION_VERIFIED`,
+`LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -377,6 +384,43 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Lab isolation & recovery (PRD v2 Phase 15 — fake controller)
+
+The safety infrastructure that *gates* proof execution. It runs nothing against
+a target; it models the isolation / snapshot / health / recovery preconditions
+that must hold before any active capability could run.
+
+- **`LabEnvironment` / `LabFixture` / `RecoveryRecord`** (migration `0014`).
+  Isolation must be *proven* (`isolation_verified`) — private addressing alone
+  is never enough. A fixture needs a bound snapshot, a recorded **successful
+  restore rehearsal**, and a HEALTHY baseline; a snapshot's mere presence is
+  insufficient (§21.6).
+- **`services/lab.py`** with a `LabController` protocol and a **`FakeLabController`**
+  (touches no hypervisor/network). `readiness(fixture, env)` returns `ready`
+  only when isolation is verified, a snapshot is bound, a restore rehearsal
+  succeeded, baseline health is HEALTHY, and the fixture is unlocked — otherwise
+  it lists exactly what's missing. In this dev environment those preconditions
+  can't truthfully pass, so **a fixture is never ready and real execution stays
+  BLOCKED**, which is the intended outcome. Health vocabulary
+  (HEALTHY/DEGRADED/UNKNOWN/RECOVERY_REQUIRED/RECOVERY_FAILED) and recovery
+  outcomes (NOT_NEEDED/PENDING/VERIFIED_CLEAN/RESTORED_VERIFIED/RECOVERY_FAILED)
+  per §21.6-21.7. A failed restore records `RECOVERY_FAILED` and keeps the
+  fixture not-ready; an exclusive fixture lock prevents concurrent use.
+- **New API (read for all, mutations admin-only, audited):**
+  `GET /api/lab/environments` + `POST /api/admin/lab/environments`,
+  `POST /api/admin/lab/environments/{id}/verify-isolation`,
+  `GET /api/lab/fixtures` + `POST /api/admin/lab/fixtures`,
+  `POST /api/admin/lab/fixtures/{id}/rehearse-restore`,
+  `GET /api/lab/fixtures/{id}/readiness`. The verify/rehearse results are
+  **simulated** with the fake controller and are clearly flagged as such — a
+  real deployment must demonstrate target-only traffic / blocked
+  control-plane+internet+other-targets and a real restore on the actual Windows/
+  Docker topology before they mean anything (the real-lab gate).
+
+Deferred: the real provider integration (follows the operator's hypervisor), a
+separate disposable proof worker with enforced egress in compose, and the actual
+on-topology isolation/restore proof (all `LAB_PENDING`).
+
 ## Restricted framework adapter (PRD v2 Phase 14 — fake/metadata backend)
 
 The backend bridge to the exploitation framework (Metasploit), built as the
@@ -637,7 +681,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **239 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **244 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -653,7 +697,10 @@ that is never ELIGIBLE_FOR_PROOF in this phase; Phase 14 added `test_framework.p
 — the restricted surface has no exec/console/payload methods, unsupported
 modules/jobs raise rather than fall back, job-id correlation + idempotency under
 lost acks / duplicate delivery, and the conservative verdict interpretation
-including Safe-only-conclusive-with-telemetry).
+including Safe-only-conclusive-with-telemetry; Phase 15 added `test_lab.py` — a
+fresh fixture is not ready, readiness only after isolation+restore+HEALTHY, a
+failed restore records RECOVERY_FAILED and keeps it not-ready, isolation failure
+stays not-verified, and exclusive fixture locking).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

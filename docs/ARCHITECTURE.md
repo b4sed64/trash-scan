@@ -273,6 +273,13 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   withheld until the Phase 15 lab gates. Native verdicts are interpreted
   conservatively (§21.4): only `Vulnerable`→condition evidence (never demonstrated
   impact), and `Safe`→conclusive negative only with reach/complete telemetry.
+- **Lab isolation & recovery (`services/lab.py`, PRD v2 §21.6/Phase 15).** The
+  gating infrastructure for proof execution: `LabEnvironment` / `LabFixture` /
+  `RecoveryRecord` plus a fake `LabController`. `readiness()` requires verified
+  isolation, a bound snapshot, a recorded successful restore rehearsal, a HEALTHY
+  baseline and no lock — otherwise the fixture is not proof-ready and execution is
+  BLOCKED. Nothing here touches a hypervisor or a target; the real provider and
+  the on-topology isolation/restore proof are a `LAB_PENDING` real-lab gate.
 
 ---
 

@@ -556,6 +556,69 @@ class ExploitabilityAssessment(Base):
     )
 
 
+class LabEnvironment(Base):
+    """A registered, isolated lab environment (PRD v2 §21.6, Phase 15). Isolation
+    must be *proven* (target-only egress, blocked control-plane/internet/other
+    targets) before any active capability runs — `isolation_verified` stays False
+    until that proof is recorded; private addressing alone is never sufficient."""
+
+    __tablename__ = "lab_environments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="fake")
+    egress_policy: Mapped[str] = mapped_column(String(512), default="")
+    isolation_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    isolation_proof_ref: Mapped[str] = mapped_column(String(256), default="")
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LabFixture(Base):
+    """A disposable lab fixture bound to a target, with a recoverable baseline
+    (PRD v2 §21.6). A snapshot alone is insufficient — a successful restore
+    rehearsal and HEALTHY baseline must be recorded before the fixture is
+    proof-ready. Holds an exclusive lock while an attempt uses it."""
+
+    __tablename__ = "lab_fixtures"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    lab_environment_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("lab_environments.id"), nullable=False, index=True)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    build_id: Mapped[str] = mapped_column(String(128), default="")
+    snapshot_id: Mapped[str] = mapped_column(String(128), default="")
+    snapshot_digest: Mapped[str] = mapped_column(String(128), default="")
+    # HEALTHY | DEGRADED | UNKNOWN | RECOVERY_REQUIRED | RECOVERY_FAILED
+    baseline_health: Mapped[str] = mapped_column(String(20), nullable=False, default="UNKNOWN")
+    restore_rehearsed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    restore_rehearsal_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_by: Mapped[str | None] = mapped_column(String(64))
+    locked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("target_id", name="uq_lab_fixture_target"),)
+
+
+class RecoveryRecord(Base):
+    """A recovery/cleanup record for a fixture (PRD v2 §21.6/§21.7). Recovery
+    outcome is tracked independently of any proof outcome and may outlive an
+    attempt; a RECOVERY_FAILED blocks further active work on the fixture until an
+    administrator verifies readiness."""
+
+    __tablename__ = "recovery_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    fixture_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_fixtures.id"),
+                                            nullable=False, index=True)
+    # NOT_NEEDED | PENDING | VERIFIED_CLEAN | RESTORED_VERIFIED | RECOVERY_FAILED
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    detail: Mapped[str] = mapped_column(String(512), default="")
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

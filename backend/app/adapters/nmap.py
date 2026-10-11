@@ -12,8 +12,7 @@ Hard restrictions enforced here:
     (``-sT``) is used, OS detection is skipped, and no UDP ports are scanned.
   * UDP scanning (Standard active only) is a fixed, curated port list
     (``settings.standard_udp_ports``), never a broad/arbitrary sweep, and exists
-    specifically to let ``snmp-sysdescr``/``nbstat`` run — not general UDP
-    service discovery.
+    specifically to let ``nbstat`` run — not general UDP service discovery.
   * targets are the pre-resolved in-scope IPs, never a hostname.
 
 ``smb2-security-mode``/``smb-security-mode`` report whether SMB message signing
@@ -22,19 +21,17 @@ is enforced; ``ldap-rootdse`` reads the anonymously-queryable LDAP root DSE;
 ``ssl-cert`` reads a certificate's validity period on non-HTTP TLS services
 (LDAPS, SMTP-STARTTLS, RDP-over-TLS — httpx's ``-tls-grab`` only ever sees
 HTTP(S)); ``smb-protocols`` lists which SMB dialects a server accepts;
-``snmp-sysdescr`` reads system info over SNMP using the default ``public``
-read-only community string (nmap's own ``nselib/snmp.lua`` only ever tries
-that one well-known default, never a list — a single default-credential
-check, the same category as an anonymous LDAP bind, not a guessing
-campaign); ``nbstat`` reads a host's self-announced NetBIOS name/user/MAC.
-All eight are Nmap-categorized ``safe``/``discovery``/``default`` with no
-exception needed. ``smb_signing_finding``, ``ssl_cert_findings``,
-``smb_protocols_finding``, and ``snmp_public_finding`` turn their scripts'
-output into actionable findings the same way ``httpx.tls_findings`` does for
-TLS; ``ldap-rootdse``, ``rdp-enum-encryption``, and ``nbstat`` surface as
-observations only, since their output is asset-identification data rather
-than a posture verdict, or isn't stable enough to key a severity-ranked rule
-off with confidence.
+``nbstat`` reads a host's self-announced NetBIOS name/user/MAC. These are
+Nmap-categorized ``safe``/``discovery``/``default`` with no exception needed.
+``snmp-sysdescr`` is DISABLED (PRD v2 §8.2 / F1): it only ever succeeds via the
+default ``public`` community string, which the preserved no-credential-testing
+boundary forbids regardless of Nmap's "safe" category — it is absent from the
+allowlist and never runs. ``smb_signing_finding``, ``ssl_cert_findings`` and
+``smb_protocols_finding`` turn their scripts' output into actionable findings
+the same way ``httpx.tls_findings`` does for TLS; ``ldap-rootdse``,
+``rdp-enum-encryption`` and ``nbstat`` surface as observations only, since their
+output is asset-identification data rather than a posture verdict, or isn't
+stable enough to key a severity-ranked rule off with confidence.
 """
 from __future__ import annotations
 
@@ -69,13 +66,20 @@ _WEBBISH = {"http", "https", "http-alt", "https-alt", "http-proxy", "ssl/http"}
 # selected, it never selects one on its own.
 NSE_SCRIPTS = frozenset({
     "smb2-security-mode", "smb-security-mode", "ldap-rootdse", "rdp-enum-encryption",
-    "ssl-cert", "smb-protocols", "snmp-sysdescr", "nbstat",
+    "ssl-cert", "smb-protocols", "nbstat",
 })
-# snmp-sysdescr/nbstat both need UDP ports open (SNMP/161, NetBIOS/137), so
-# they are only ever added to --script when the UDP scan itself is enabled
-# (Standard active + allow_raw_packet) — never requested, and so never run,
-# otherwise.
-_UDP_ONLY_SCRIPTS = frozenset({"snmp-sysdescr", "nbstat"})
+# PRD v2 §8.2 (Phase 10, finding F1): snmp-sysdescr is DISABLED under the
+# preserved no-credential-testing boundary — it only ever succeeds by presenting
+# the default "public" community string, which is a credential probe regardless
+# of Nmap's "safe" category. It is deliberately absent from NSE_SCRIPTS so it is
+# never selected. The snmp_public_finding helper below is kept dormant for a
+# future, separately-reviewed re-enable; nothing calls it today.
+#
+# nbstat needs a UDP port open (NetBIOS/137), so it is only added to --script
+# when the UDP scan itself is enabled (Standard active + allow_raw_packet) —
+# never requested, and so never run, otherwise. It reads only self-announced
+# NetBIOS names (no credential), so it stays.
+_UDP_ONLY_SCRIPTS = frozenset({"nbstat"})
 _SIGNING_SCRIPTS = {"smb2-security-mode", "smb-security-mode"}
 _EXPIRING_SOON_DAYS = 30
 _NOT_VALID_AFTER_RE = re.compile(r"Not valid after:\s*([0-9T:\-]+)")
@@ -179,7 +183,11 @@ def smb_protocols_finding(output: str, host: str) -> DiscoveredFinding | None:
 
 
 def snmp_public_finding(output: str, host: str) -> DiscoveredFinding | None:
-    """snmp-sysdescr succeeding at all means the SNMP agent accepted the
+    """DORMANT (PRD v2 §8.2 / F1): snmp-sysdescr is disabled under the preserved
+    no-credential-testing boundary, so nothing calls this today. Kept intact for
+    a future, separately-reviewed re-enable.
+
+    snmp-sysdescr succeeding at all means the SNMP agent accepted the
     well-known default "public" read-only community string — nmap's snmp
     library only ever tries that one default, never a list (verified against
     nselib/snmp.lua's ``o.community = community or "public"``), so this is a
@@ -317,9 +325,8 @@ def _findings_for_script(script_id: str, output: str, host: str, port: int | Non
     if script_id == "smb-protocols":
         f = smb_protocols_finding(output, host)
         return [f] if f else []
-    if script_id == "snmp-sysdescr":
-        f = snmp_public_finding(output, host)
-        return [f] if f else []
+    # snmp-sysdescr is disabled (PRD v2 §8.2 / F1); snmp_public_finding is dormant
+    # and intentionally not dispatched here.
     return []
 
 

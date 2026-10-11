@@ -17,7 +17,7 @@ demonstration can reach `CODE_VERIFIED` but never a real-lab `ACCEPTED`.
 | 7 | Baseline verification & repository plan | `CODE_VERIFIED` | This document. |
 | 8 | Coverage ledger & evidence foundation | `CODE_VERIFIED` | `CoverageEntry` + migration `0009`; coverage-gated comparison; 193 tests. Observation-immutability hardening (evidence_ref/redaction column on `Observation`) tracked as a remaining Phase-8 refinement — the coverage ledger carries the bounded evidence_ref today. |
 | 9 | Canonical issues, comparison & legacy migration | `CODE_VERIFIED` | `Issue`/`Occurrence` + migration `0010`; explicit equivalent-detector mapping (shared TLS rule-ids collapse httpx+nmap); lossless idempotent `backfill_all`; issue list/detail API + admin backfill. UI grouping deferred to the next increment (PRD orders API before UI). 199 tests. |
-| 10 | Contextual accuracy & detection coverage | `NOT_STARTED` | Includes resolving the default-community conflict below. |
+| 10 | Contextual accuracy & detection coverage | `IN_PROGRESS` | F1 resolved: `snmp-sysdescr` disabled per §8.2 (helper kept dormant). Remaining §8.4 accuracy fixes (soft-404/characteristic-content, TLS hostname-mismatch on IP-only scans, DMARC `p=none`, header context) are the next work units. |
 | 11 | CVE intelligence & priority | `NOT_STARTED` | |
 | 12 | Review, focused retest & export | `NOT_STARTED` | Result-quality release gate. |
 | 13–24 | Exploitability assessment, Metasploit backend, lab isolation, proof execution, live sessions | `NOT_STARTED` | Each requires its own explicit authorization and (13+) a real-lab gate; fake-backed development only until then. |
@@ -57,18 +57,18 @@ lab** and must stay disabled until the Phase 7 real-lab gate passes.
 
 ## Critical findings for Phases 8–12
 
-### F1 — Default-community probe conflict (feeds Phase 10)
+### F1 — Default-community probe conflict — RESOLVED (Phase 10)
 
-The `snmp-sysdescr` NSE script (added post-MVP, UDP-gated) succeeds by sending
-the well-known default `public` read-only community string, and its success is
-surfaced as the `snmp-public-community-exposed` finding. The v2 PRD's preserved
-safety boundary (`§10`, Phase 10: "Disable credential/community probes under
-the preserved boundary") treats a default-community probe as a credential
-probe that must be **off** under the default boundary. **Conflict to resolve in
-Phase 10:** gate `snmp-sysdescr` (and its finding) behind an explicit, separate
-opt-in that is disabled by default, rather than enabling it whenever UDP
-scanning is on. Until resolved, this is the one active behavior that contradicts
-the preserved boundary.
+The `snmp-sysdescr` NSE script (added post-MVP, UDP-gated) succeeded by sending
+the well-known default `public` read-only community string, surfaced as the
+`snmp-public-community-exposed` finding. The v2 PRD's preserved safety boundary
+(`§8.2`: "Disable `snmp-sysdescr` under the preserved no-credential-testing
+boundary") treats a default-community probe as a credential probe. **Resolution
+(Phase 10, first work unit):** `snmp-sysdescr` was **disabled** — removed from
+`nmap.NSE_SCRIPTS` / `_UDP_ONLY_SCRIPTS` and no longer dispatched, so it can
+never be selected. The `snmp_public_finding` helper is retained **dormant**
+(still unit-tested) for a future, separately-reviewed re-enable. `nbstat`
+(NetBIOS name disclosure, no credential) remains the only UDP-gated script.
 
 ### F2 — Unsafe outbound scope path (track through Phases 10–11)
 

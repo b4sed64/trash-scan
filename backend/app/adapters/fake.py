@@ -32,7 +32,6 @@ from .httpx import tls_findings
 from .nmap import (
     smb_protocols_finding,
     smb_signing_finding,
-    snmp_public_finding,
     ssl_cert_findings,
 )
 from .osint import registration_expiry_finding
@@ -219,19 +218,8 @@ class FakeNmapAdapter:
                         value="Security layer: RDP, SSL, CredSSP", source="nmap", asset_value=ip,
                     ))
                 if inp.options.get("udp_scan"):
-                    if (_octet(ip, "snmp") % 3) == 0:
-                        out.services.append(DiscoveredService(
-                            asset_value=ip, port=161, protocol="udp", state="open",
-                            product="SNMP", version="", confidence="10",
-                        ))
-                        sysdescr = f"Cisco IOS Software, lab switch {ip}\n  System uptime: 12 days, 3:14:07"
-                        out.observations.append(DiscoveredObservation(
-                            kind="NSE", key="snmp-sysdescr", value=sysdescr, source="nmap",
-                            asset_value=ip,
-                        ))
-                        f = snmp_public_finding(sysdescr, ip)
-                        if f:
-                            out.findings.append(f)
+                    # snmp-sysdescr is disabled (PRD v2 §8.2 / F1); the fake
+                    # pipeline mirrors that by emitting no SNMP community probe.
                     if (_octet(ip, "netbios") % 3) == 0:
                         out.services.append(DiscoveredService(
                             asset_value=ip, port=137, protocol="udp", state="open",

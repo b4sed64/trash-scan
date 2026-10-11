@@ -314,6 +314,11 @@ shipped off by default, and one new pinned tool for broader crawling. See
   - `snmp-sysdescr` and `nbstat` added to the NSE allowlist, but only ever
     included in `--script` when the UDP scan itself is enabled
     (`nmap._UDP_ONLY_SCRIPTS`) — never requested, and so never run, without it.
+  - **Superseded by PRD v2 §8.2 / F1 (see "Phase 10" below): `snmp-sysdescr` is
+    now DISABLED and removed from the allowlist** — relying on the default
+    `public` community string is a credential probe under the preserved
+    boundary. The paragraph below records the original rationale; it no longer
+    describes shipped behavior.
   - `snmp-sysdescr` queries a device over SNMP using the well-known default
     `public` read-only community string. This was checked against Nmap's own
     `nselib/snmp.lua` before adding: `o.community = community or "public"` — the
@@ -354,6 +359,20 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## Phase 10 — contextual accuracy (in progress)
+
+First work unit (finding **F1**): `snmp-sysdescr` is **disabled** under the
+preserved no-credential-testing boundary (PRD v2 §8.2). It only ever succeeds by
+presenting the default `public` SNMP community string, which counts as a
+credential probe regardless of Nmap's `safe` category. It is removed from
+`nmap.NSE_SCRIPTS` / `_UDP_ONLY_SCRIPTS` so it can never be selected, and
+`_findings_for_script` no longer dispatches it. The `nmap.snmp_public_finding`
+helper is kept **dormant** (still unit-tested) for a future, separately-reviewed
+re-enable. `nbstat` (NetBIOS name disclosure — no credential) stays as the only
+UDP-gated script. The remaining §8.4 accuracy fixes (soft-404 / characteristic
+content, TLS hostname-mismatch on IP-only scans, DMARC `p=none` as monitoring,
+header-context rules) are the next work units.
 
 ## Canonical issues (PRD v2 Phase 9)
 
@@ -428,11 +447,12 @@ per-port `<script>` elements including rejection of any non-allowlisted script i
 wiring; end-to-end through the fake pipeline), `test_recon_additions.py` (favicon-hash
 observation parsing and its absence when httpx reports no hash; PTR-sweep of a CIDR range
 through both the fake adapter directly and a full passive scan execution), `test_udp_scan.py`
-(the SNMP default-community finding rule; that `snmp-sysdescr`/`nbstat` are only ever added
-to `--script` when UDP scanning is enabled, checked directly against the real adapter's argv
-construction with a monkeypatched settings object, not just the fake pipeline; profile
-wiring; end-to-end through the fake pipeline; that a `udp_ports` option overrides
-`TRASHSCAN_STANDARD_UDP_PORTS` in the real adapter's argv). `test_port_sets.py` and
+(that `snmp-sysdescr` is disabled / absent from the allowlist — PRD v2 §8.2 / F1 — while its
+`snmp_public_finding` helper stays dormant but still classifies output; that `nbstat` is only
+added to `--script` when UDP scanning is enabled, checked directly against the real adapter's
+argv construction with a monkeypatched settings object, not just the fake pipeline; profile
+wiring; the fake pipeline emits `nbstat` but never `snmp-sysdescr`; that a `udp_ports` option
+overrides `TRASHSCAN_STANDARD_UDP_PORTS` in the real adapter's argv). `test_port_sets.py` and
 `test_scan_targeting.py` gained coverage for `PortSet.protocol` (default, explicit `UDP`,
 rejection of an invalid value) and for `CreateScan.udp_ports` (recorded on the scan's
 approval options, rejected with 422 on a malformed spec, `None` when not specified).

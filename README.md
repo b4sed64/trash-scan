@@ -157,15 +157,15 @@ opt-in rather than on by default.
 
 Active profiles also run a fixed, Administrator-reviewed Nmap NSE allowlist —
 `smb2-security-mode`, `smb-security-mode`, `ldap-rootdse`, `rdp-enum-encryption`,
-`ssl-cert`, `smb-protocols`, plus `snmp-sysdescr`/`nbstat` in Standard active when UDP
-scanning is enabled — all Nmap-categorized `safe`/`discovery`/`default`, invoked by exact
-script name only, never a category or wildcard. SMB signing posture
-(`smb-signing-not-required`), certificate expiry on non-HTTP TLS services like LDAPS
-(`tls-cert-expired`/`tls-cert-expiring-soon`), SMBv1 still being enabled (`smb1-enabled`),
-and an SNMP agent accepting the well-known default `public` community string
-(`snmp-public-community-exposed`) each become a severity-ranked finding; the LDAP root DSE,
-RDP encryption-negotiation, and NetBIOS name/user/MAC results surface as observations for
-an analyst to review.
+`ssl-cert`, `smb-protocols`, plus `nbstat` in Standard active when UDP scanning is
+enabled — all Nmap-categorized `safe`/`discovery`/`default`, invoked by exact script name
+only, never a category or wildcard. SMB signing posture (`smb-signing-not-required`),
+certificate expiry on non-HTTP TLS services like LDAPS
+(`tls-cert-expired`/`tls-cert-expiring-soon`), and SMBv1 still being enabled
+(`smb1-enabled`) each become a severity-ranked finding; the LDAP root DSE, RDP
+encryption-negotiation, and NetBIOS name/user/MAC results surface as observations for an
+analyst to review. (`snmp-sysdescr` is **disabled** under the no-credential-testing
+boundary — it only succeeds via the default `public` community string; PRD v2 §8.2.)
 
 httpx also computes an mmh3 favicon hash (`-favicon`, the same technique Shodan's
 `http.favicon.hash` uses) for spotting a known product/CMS even when its version banner is

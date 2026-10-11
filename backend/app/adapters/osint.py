@@ -115,12 +115,22 @@ def registration_expiry_finding(rdap: dict, domain: str) -> DiscoveredFinding | 
     expired = days_left < 0
     rule_id = "osint-domain-registration-expired" if expired else "osint-domain-registration-expiring-soon"
     registrar = rdap.get("registrar") or "unknown registrar"
+    # §8.4: RDAP dates are operational metadata, not a confirmed condition —
+    # renewal and registry grace/redemption periods mean a past-expiry date does
+    # not prove the domain is actually available for re-registration. Keep the
+    # severity operational (MEDIUM/LOW) rather than treating it as a vuln.
     return DiscoveredFinding(
         rule_id=rule_id, template_hash=_rule_hash(rule_id),
-        severity="HIGH" if expired else "MEDIUM",
-        name="Domain Registration Expired" if expired else "Domain Registration Expiring Soon",
-        description="A lapsed domain registration can be re-registered by a third party, "
-                    "hijacking the domain and everything hosted under it.",
+        severity="MEDIUM" if expired else "LOW",
+        name="Domain Registration Past Expiry Date" if expired else "Domain Registration Expiring Soon",
+        description=(
+            "RDAP reports this domain's registration "
+            + ("is past its expiry date" if expired
+               else f"expires within {_EXPIRING_SOON_DAYS} days")
+            + ". Treat this as operational metadata: registry renewal or grace/redemption "
+            "periods may mean it is not yet available for re-registration. Verify with the "
+            "registrar before acting."
+        ),
         asset_value=domain, matched_at=f"rdap://{domain}", matcher_name="rdap",
         evidence_key=f"{rule_id}:{expires}",
         evidence_summary=f"{domain} ({registrar}) {'expired' if expired else 'expires'} {expires}",

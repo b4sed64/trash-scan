@@ -392,8 +392,27 @@ Second work unit — §8.4 contextual accuracy fixes:
   template-admission requirement (§8.3) for any future weak-signal detector, not
   a change to the current ones.
 
-Remaining §8.4 units (header-context / HSTS-CSP nuance, SPF qualifier malformed
-cases, RDAP grace-period semantics) are not yet done.
+Third work unit — more §8.4 context:
+
+- **HTTP security headers** (`missing-security-headers.yaml`): X-Frame-Options
+  absence is no longer flagged when a Content-Security-Policy is present (CSP
+  `frame-ancestors` is the equivalent control). The template now flags only
+  missing `nosniff` *or* missing clickjacking protection (neither CSP nor XFO),
+  and its description states absence does not by itself prove XSS/clickjacking.
+  Manifest regenerated; `nuclei -validate` passes.
+- **SPF qualifiers / malformed** (`dnsx.dns_posture_findings`): distinguishes
+  `+all` (permissive), `~all`/`-all` (clean), **multiple SPF records**
+  (`dns-spf-multiple`, a RFC 7208 PermError), and **no terminating `all`**
+  (`dns-spf-no-all`, INFO — receivers fall back to neutral).
+- **RDAP expiry** (`osint.registration_expiry_finding`): reframed as operational
+  metadata — past-expiry is MEDIUM (not HIGH) and expiring-soon is LOW (not
+  MEDIUM), with wording noting registry renewal/grace/redemption periods mean a
+  past date does not prove the domain is re-registrable; verify with the
+  registrar first.
+
+Remaining §8.4 units (DKIM selector handling, reviewed rule-family capability
+manifests, and surfacing per-family capability/coverage in the UI) are not yet
+done.
 
 ## Canonical issues (PRD v2 Phase 9)
 

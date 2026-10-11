@@ -4,7 +4,7 @@ info:
   name: Missing HTTP Security Headers
   author: trash-scan
   severity: low
-  description: The HTTP response is missing one or more common security headers (X-Frame-Options, X-Content-Type-Options, Content-Security-Policy).
+  description: The HTTP response is missing effective security headers. X-Content-Type-Options (nosniff) is absent, or clickjacking protection is absent (neither Content-Security-Policy nor X-Frame-Options is present). Per PRD v2 §8.4, X-Frame-Options absence alone is not flagged when a Content-Security-Policy is present, since CSP frame-ancestors is the equivalent control. Absence does not by itself prove XSS or clickjacking exploitability.
   tags: misconfig,headers
 
 http:
@@ -18,7 +18,6 @@ http:
           - 200
       - type: dsl
         dsl:
-          - "!contains(tolower(all_headers), 'x-frame-options')"
           - "!contains(tolower(all_headers), 'x-content-type-options')"
-          - "!contains(tolower(all_headers), 'content-security-policy')"
+          - "!contains(tolower(all_headers), 'content-security-policy') && !contains(tolower(all_headers), 'x-frame-options')"
         condition: or

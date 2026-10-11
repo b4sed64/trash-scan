@@ -67,7 +67,9 @@ def dns_posture_findings(observations: list[DiscoveredObservation], domain: str)
 
     findings: list[DiscoveredFinding] = []
 
-    spf = next((t for t in txt_apex if t.lower().startswith("v=spf1")), None)
+    # §8.4: distinguish +all / ~all / -all / malformed / no-all, don't conflate them.
+    spf_records = [t for t in txt_apex if t.lower().startswith("v=spf1")]
+    spf = spf_records[0] if spf_records else None
     if spf is None:
         findings.append(_mk(
             "dns-spf-missing", "MEDIUM", "Missing SPF Record",
@@ -76,14 +78,40 @@ def dns_posture_findings(observations: list[DiscoveredObservation], domain: str)
             evidence_summary=f"{domain} has no v=spf1 TXT record",
             evidence={"txt_records": txt_apex},
         ))
-    elif "+all" in spf.lower():
-        findings.append(_mk(
-            "dns-spf-permissive", "MEDIUM", "Permissive SPF Record (+all)",
-            "The SPF record ends in '+all', which authorizes any host to send mail as this domain.",
-            domain, evidence_key="spf-permissive",
-            evidence_summary=f"{domain} SPF record: {spf}",
-            evidence={"spf": spf},
-        ))
+    else:
+        if len(spf_records) > 1:
+            # RFC 7208: more than one SPF record is a PermError — receivers reject it.
+            findings.append(_mk(
+                "dns-spf-multiple", "LOW", "Multiple SPF Records (Malformed)",
+                "More than one v=spf1 record is published at the apex; per RFC 7208 this is a "
+                "PermError and receivers will not evaluate SPF reliably. Publish exactly one.",
+                domain, evidence_key="spf-multiple",
+                evidence_summary=f"{domain} has {len(spf_records)} SPF records",
+                evidence={"spf_records": spf_records},
+            ))
+        low = spf.lower()
+        tokens = low.split()
+        has_all = any(tok.lstrip("+-~?") == "all" for tok in tokens)
+        has_redirect = any(tok.startswith("redirect=") for tok in tokens)
+        if "+all" in low:
+            findings.append(_mk(
+                "dns-spf-permissive", "MEDIUM", "Permissive SPF Record (+all)",
+                "The SPF record ends in '+all', which authorizes any host to send mail as this domain.",
+                domain, evidence_key="spf-permissive",
+                evidence_summary=f"{domain} SPF record: {spf}",
+                evidence={"spf": spf},
+            ))
+        elif not has_all and not has_redirect:
+            # No terminating all-mechanism and no redirect: receivers apply the
+            # neutral default (?all), so the policy enforces nothing.
+            findings.append(_mk(
+                "dns-spf-no-all", "INFO", "SPF Record Has No Terminating 'all' Mechanism",
+                "The SPF record has no '-all'/'~all' (or redirect), so receivers fall back to a "
+                "neutral result and the policy does not actually constrain senders.",
+                domain, evidence_key="spf-no-all",
+                evidence_summary=f"{domain} SPF record: {spf}",
+                evidence={"spf": spf},
+            ))
 
     dmarc = next((t for t in txt_dmarc if t.lower().startswith("v=dmarc1")), None)
     if dmarc is None:

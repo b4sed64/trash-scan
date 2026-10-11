@@ -115,6 +115,26 @@ def test_dns_posture_clean_when_well_configured():
     assert dns_posture_findings(obs, "example.com") == []
 
 
+def test_spf_multiple_records_flagged_malformed():
+    obs = [
+        _obs("TXT", "v=spf1 include:a.example.com -all", "example.com"),
+        _obs("TXT", "v=spf1 include:b.example.com -all", "example.com"),
+    ]
+    ids = {f.rule_id for f in dns_posture_findings(obs, "example.com")}
+    assert "dns-spf-multiple" in ids
+
+
+def test_spf_without_terminating_all_is_informational():
+    obs = [_obs("TXT", "v=spf1 include:_spf.example.com", "example.com")]
+    by_rule = {f.rule_id: f for f in dns_posture_findings(obs, "example.com")}
+    assert "dns-spf-no-all" in by_rule
+    assert by_rule["dns-spf-no-all"].severity == "INFO"
+    # a clean ~all record does not trigger it
+    clean = {f.rule_id for f in dns_posture_findings(
+        [_obs("TXT", "v=spf1 include:_spf.example.com ~all", "example.com")], "example.com")}
+    assert "dns-spf-no-all" not in clean
+
+
 def test_dns_posture_only_looks_at_the_target_domain():
     # a sibling/child hostname's TXT record must not satisfy the apex's SPF check
     obs = [_obs("TXT", "v=spf1 ~all", "other.example.com")]

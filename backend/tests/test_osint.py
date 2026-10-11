@@ -80,7 +80,8 @@ def test_registration_expiry_finding_expiring_soon():
     f = registration_expiry_finding({"expires": soon, "registrar": "x"}, "example.com")
     assert f is not None
     assert f.rule_id == "osint-domain-registration-expiring-soon"
-    assert f.severity == "MEDIUM"
+    # §8.4: operational metadata, not a vuln — LOW, not MEDIUM
+    assert f.severity == "LOW"
 
 
 def test_registration_expiry_finding_already_expired():
@@ -88,7 +89,9 @@ def test_registration_expiry_finding_already_expired():
     f = registration_expiry_finding({"expires": past, "registrar": "x"}, "example.com")
     assert f is not None
     assert f.rule_id == "osint-domain-registration-expired"
-    assert f.severity == "HIGH"
+    # §8.4: grace/redemption periods mean this is not a confirmed hijack — MEDIUM, not HIGH
+    assert f.severity == "MEDIUM"
+    assert "grace" in f.description.lower() or "operational metadata" in f.description.lower()
 
 
 def test_registration_expiry_finding_no_data():

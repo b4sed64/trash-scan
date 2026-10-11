@@ -10,7 +10,7 @@
     "exposed-panel-grafana.yaml": "22395d90edd642f0b4bf45bb9585ea62e060c742d498a011a3a3535bbe2a747c",
     "exposed-panel-phpmyadmin.yaml": "84072ac6b23934d8b11298cc90d3ff51a3ef9081fe35143e33b0311c2c4e49c3",
     "git-config-exposure.yaml": "12b857721fdb1d6461319c149b754582cb2e20f424b3fb98ba2f42b15e97db9a",
-    "missing-security-headers.yaml": "5082e683ce83e387fca44c92583c305982c699854df7479eef0681d4aa68d420",
+    "missing-security-headers.yaml": "ccdbeb27f92d21d09dc86130dcb778f6f22e8f219fefba494f95bd25ccbdfd08",
     "nginx-default-page.yaml": "f823393b7a9f04d17e12b8a9fde3187813320537291d4e63ed1259f7e3a16634",
     "phpinfo-exposure.yaml": "97abb02e3618ad0bf4e8109c79d07639c24eb5fe7a0622ad2d18db45d87fadc1",
     "server-version-disclosure.yaml": "1bf9a43d77202a6afa19afb08eb25371328410f957452e87f3f3c2ead407ddc8"

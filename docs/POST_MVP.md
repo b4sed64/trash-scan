@@ -394,6 +394,31 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Internal listener & verified session establishment (PRD v2 Phase 19 — fake listener)
+
+The listener/establishment logic, fake-only — **no socket is ever bound and no
+real callback is received** (`services/listener.py`). Gated by
+`enable_guided_sessions` (off) and withheld until the Phase 15 lab isolation gate.
+
+- **Listener boundary is the safety core** (`validate_listener_boundary`): a
+  listener may bind only to a **concrete private address inside the declared lab
+  boundary** — never a wildcard (`0.0.0.0`/`::`), loopback, `host.docker.internal`,
+  or any public/routable address, and never a private address outside the
+  declared CIDR. Establishment refuses outright if the grant's listener fails
+  this check.
+- **Verified establishment:** a (simulated) callback binds a session through the
+  Phase 18 broker; fixture **association requires the callback source to match
+  the expected fixture** — a mismatch yields a `QUARANTINED` session that accepts
+  no input, and an unexpected second session is quarantined too. A session
+  reaching `READY` does not by itself prove any claimed impact.
+- **Session-aware parent lifecycle:** a verified session moves the attempt to
+  `SESSION_ACTIVE`; `terminate()` removes **both** the listener and the session,
+  and `attempt_has_live_session()` ensures the parent can't complete while a
+  session is live. No migration (reuses the Phase 18 session models).
+
+Remaining: a real listener (bound inside a proven-isolated lab) stays a
+`LAB_PENDING` gate; guided session actions are Phase 20.
+
 ## Session domain (PRD v2 Phase 18 — fakes, sessions disabled against real targets)
 
 The session model + broker, fake-only — there is no real listener or target
@@ -780,7 +805,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **263 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **277 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -809,7 +834,11 @@ GAP, and a proof attempt emitting durable events; Phase 18 added
 `test_session_broker.py` — unverified sessions accept no input, verify requires
 fixture association, ambiguous second sessions quarantined, native-ID reuse
 across epochs distinct, single-writer lease + admin-takeover fencing, and
-disconnect stopping input).
+disconnect stopping input; Phase 19 added `test_listener.py` — the listener
+boundary rejects wildcard/host/loopback/public and private-outside-boundary,
+matching callback reaches READY, mismatched callback quarantined with no input,
+establish refused when sessions disabled or the listener interface is bad, and
+terminate removes both listener and session).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

@@ -303,6 +303,14 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   A fenced single-writer `ControllerLease` enforces one controller across tabs;
   admin takeover fences the old writer. Fake-only and behind
   `enable_guided_sessions` (off) — sessions are disabled against real targets.
+- **Internal listener & establishment (`services/listener.py`, PRD v2 §22.3/Phase 19).**
+  Fake listener — no socket is bound. `validate_listener_boundary` permits only a
+  concrete private address inside the declared lab boundary (never wildcard,
+  loopback, host bridge, public, or out-of-boundary). A simulated callback binds
+  a session through the broker; fixture association requires the callback source
+  to match the expected fixture, else the session is quarantined and takes no
+  input. Termination removes both listener and session; the parent attempt can't
+  complete while a session is live. Gated off; a real listener is a lab gate.
 
 ---
 

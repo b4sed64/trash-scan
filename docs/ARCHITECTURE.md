@@ -264,6 +264,15 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   and snapshot prerequisites are unsatisfiable until the lab phases, so nothing is
   `ELIGIBLE_FOR_PROOF` yet. Active checks/proof/sessions stay behind `enable_lab_*`
   flags (all off) plus their own plans, attestations, approvals and real-lab gates.
+- **Restricted framework adapter (`services/framework.py`, PRD v2 §21.2/Phase 14).**
+  The only permitted bridge to the exploitation framework: a narrow typed surface
+  (capabilities / module metadata / check / job status/result / cancel) with no
+  generic RPC, console, payload generation, module loading or local-shell
+  fallback — their absence is the contract. Fake-backed in this phase (no real
+  framework, no target contact, no execution); a real private-RPC adapter stays
+  withheld until the Phase 15 lab gates. Native verdicts are interpreted
+  conservatively (§21.4): only `Vulnerable`→condition evidence (never demonstrated
+  impact), and `Safe`→conclusive negative only with reach/complete telemetry.
 
 ---
 

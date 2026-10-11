@@ -377,6 +377,38 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Restricted framework adapter (PRD v2 Phase 14 — fake/metadata backend)
+
+The backend bridge to the exploitation framework (Metasploit), built as the
+PRD prescribes: **fake-backed, no real framework contacted, nothing executed
+against a target.** `services/framework.py` defines the *entire* permitted
+surface — `capabilities`, `module_metadata`, `start_check`, `job_status`,
+`job_result`, `cancel` — and nothing else. There is deliberately **no** generic
+RPC, console passthrough, arbitrary datastore options, payload generation,
+module loading, resource scripts, or local-shell fallback; their absence is the
+contract, verified by a test asserting those methods do not exist.
+
+- **`FakeFrameworkAdapter`** with sanitized native-response fixtures backs all
+  development/tests. `get_framework_adapter()` always returns the fake in this
+  phase; a real adapter (private authenticated RPC, reachable only inside the
+  restricted worker boundary) is introduced later and stays withheld until the
+  Phase 15 lab isolation/recovery gates — no state-changing operation runs
+  before then.
+- **Job correlation + idempotency:** `start_check` is idempotent on a client
+  idempotency key (a lost ack / duplicated submit maps to one job), and
+  `job_result` delivery is idempotent. Unsupported modules/jobs raise rather
+  than fall back.
+- **Conservative result interpretation (§21.4):** `interpret_native_result`
+  maps `Appears`→candidate, `Detected`→product/service, `Vulnerable`→reviewed
+  *condition* evidence (never demonstrated impact — a check verdict is not an
+  executed exploit), and `Safe`→a conclusive negative **only** when telemetry
+  proves the service was reached and the check completed; otherwise, and for
+  `Unknown`/`Unsupported`/`Error`/`Timeout`/absent, it is INCONCLUSIVE and never
+  establishes absence.
+
+No schema, API or config change — this is the adapter layer only. It is wired
+into actual proof execution in a later phase (16), behind the lab gates.
+
 ## Exploitability assessment (PRD v2 Phase 13 — offline, analytical only)
 
 The first slice of the §21 exploitability work. It is **entirely offline: no
@@ -605,7 +637,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **230 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **239 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -617,7 +649,11 @@ redacted JSON export preserving excluded/candidate/coverage data; Phase 13 added
 `test_exploitability.py` — lab prerequisites blocking eligibility, research-only
 modules BLOCKED_POLICY, eligible only when all prerequisites satisfied, dry-run
 schema validation without traffic, and an end-to-end scan deriving an assessment
-that is never ELIGIBLE_FOR_PROOF in this phase).
+that is never ELIGIBLE_FOR_PROOF in this phase; Phase 14 added `test_framework.py`
+— the restricted surface has no exec/console/payload methods, unsupported
+modules/jobs raise rather than fall back, job-id correlation + idempotency under
+lost acks / duplicate delivery, and the conservative verdict interpretation
+including Safe-only-conclusive-with-telemetry).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

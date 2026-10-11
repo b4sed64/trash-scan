@@ -17,8 +17,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0012_issue_review` | Issue review/remediation columns (validation + remediation state, owner, due date, closure metadata) and a `risk_exceptions` table (PRD v2 Phase 12). See "Issue review & remediation" below. |
 | `0013_exploitability_assessment` | `exploitability_assessments` table — offline, analytical issue→module assessments (PRD v2 Phase 13). No execution. See "Exploitability assessment" below. |
 | `0014_lab_environment` | `lab_environments` / `lab_fixtures` / `recovery_records` — lab isolation/snapshot/recovery gating metadata (PRD v2 Phase 15). Fake controller; no execution. See "Lab isolation & recovery" below. |
+| `0015_proof_execution` | `proof_plans` / `proof_attempts` / `proof_evidence` — one-shot proof lifecycle (PRD v2 Phase 16). Fake-backed and hard-gated; BLOCKED unless the lab-proof flag is on and a fixture is ready. See "One-shot proof execution" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0014_lab_environment`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0015_proof_execution`.
 
 ## One scan, many targets, manual start
 
@@ -79,6 +80,10 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/lab/fixtures`, `POST /api/admin/lab/fixtures` | List / register a fixture bound to a target. |
 | `POST /api/admin/lab/fixtures/{id}/rehearse-restore` | Record a restore rehearsal (simulated; audited `LAB_RESTORE_REHEARSED`). |
 | `GET /api/lab/fixtures/{id}/readiness` | Whether the fixture is proof-ready, and if not, exactly why. |
+| `POST /api/proof/plans` | Create an immutable one-shot proof plan (operator; target access). Refuses un-admitted modules. |
+| `POST /api/proof/plans/{id}/approve` | Administrator-only; requires the exact proof attestation; audited `PROOF_PLAN_APPROVED`. |
+| `POST /api/proof/plans/{id}/execute` | One-shot execution; resolves `BLOCKED` unless the lab-proof flag is on and the fixture is ready; audited `PROOF_ATTEMPT_*`. |
+| `GET /api/proof/attempts/{id}` | Attempt state + proof/recovery outcomes + nonce-correlated evidence. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -89,7 +94,8 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 `SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`, `ENRICHMENT_UPDATED`,
 `ISSUE_VALIDATION_SET`, `ISSUE_ASSIGNED`, `ISSUE_MITIGATED`, `RISK_ACCEPTED`, `ISSUE_CLOSED`,
 `ISSUE_REOPENED`, `LAB_ENVIRONMENT_REGISTERED`, `LAB_ISOLATION_VERIFIED`,
-`LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`. Failed logins
+`LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`, `PROOF_PLAN_CREATED`,
+`PROOF_PLAN_APPROVED`, `PROOF_ATTEMPT_BLOCKED`, `PROOF_ATTEMPT_COMPLETED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -383,6 +389,40 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## One-shot proof execution (PRD v2 Phase 16 — fake-backed, hard-gated)
+
+The proof lifecycle: immutable plan → proof-specific attestation → fresh
+administrator approval → a single bounded execution → nonce-correlated evidence
+→ separate recovery. Fake-backed (drives the Phase 14 fake adapter) and defended
+by hard gates checked at execution:
+
+- the `enable_lab_proof` flag (**off by default**),
+- fixture **readiness** (verified isolation + restore rehearsal + HEALTHY + unlocked),
+- a single global active proof, **one attempt per plan** (one-shot, no retry/schedule),
+- the two-hour one-start approval window.
+
+With the flag off and no ready fixture — the state of any non-lab environment —
+**every execution resolves to `BLOCKED` before anything runs.** The full path is
+implemented and tested (tests open the gates against the fake adapter), but it
+cannot execute for real here; the genuine demonstration against a seeded
+vulnerable fixture (and failure on its patched/negative fixture, plus replayed-
+evidence rejection and verified restore) is the **real-lab acceptance gate**,
+which this environment cannot satisfy.
+
+- `ProofPlan` is immutable + hashed; changing module/target/options/budgets
+  needs a new plan + approval. `create_plan` refuses an un-admitted module.
+  `approve_plan` requires the exact proof attestation and is administrator-only.
+- `ProofAttempt` carries independent lifecycle state and **separate proof and
+  recovery outcomes** — a demonstrated proof with a failed recovery is both a
+  proof and an unresolved recovery incident. Outcomes: `DEMONSTRATED` /
+  `ATTEMPTED_NOT_DEMONSTRATED` / `INCONCLUSIVE` / `BLOCKED` / `ERROR`.
+- **`DEMONSTRATED` requires the per-attempt marker to be echoed back AND a
+  negative control to hold** — the framework merely reporting `Vulnerable` is
+  never sufficient (defends against replayed/stale evidence and bare success).
+- New API (operator/admin, audited): `POST /api/proof/plans`,
+  `POST /api/proof/plans/{id}/approve` (admin + attestation),
+  `POST /api/proof/plans/{id}/execute` (one-shot), `GET /api/proof/attempts/{id}`.
 
 ## Lab isolation & recovery (PRD v2 Phase 15 — fake controller)
 
@@ -681,7 +721,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **244 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **251 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -700,7 +740,10 @@ lost acks / duplicate delivery, and the conservative verdict interpretation
 including Safe-only-conclusive-with-telemetry; Phase 15 added `test_lab.py` — a
 fresh fixture is not ready, readiness only after isolation+restore+HEALTHY, a
 failed restore records RECOVERY_FAILED and keeps it not-ready, isolation failure
-stays not-verified, and exclusive fixture locking).
+stays not-verified, and exclusive fixture locking; Phase 16 added `test_proof.py` — execution BLOCKED
+when the flag is off and when the fixture is not ready, DEMONSTRATED requires
+marker echo + negative control, a bare framework success is not demonstrated,
+plans are one-shot, and approval requires the exact attestation).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

@@ -619,6 +619,80 @@ class RecoveryRecord(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ProofPlan(Base):
+    """An immutable one-shot proof plan (PRD v2 §21.5/§21.7, Phase 16). Binds the
+    exact fixture, module/action + options, a per-attempt marker, the evaluator,
+    budgets and recovery steps into a hashed, approved unit. Changing any bound
+    field requires a new plan + approval. Approval authorizes exactly one start
+    within a two-hour window; it never bypasses the lab-proof flag or fixture
+    readiness gates checked at execution."""
+
+    __tablename__ = "proof_plans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"), nullable=False)
+    fixture_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_fixtures.id"), nullable=False)
+    issue_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("issues.id"))
+    module_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    proof_marker: Mapped[str] = mapped_column(String(64), nullable=False)
+    evaluator: Mapped[str] = mapped_column(String(32), default="marker-echo")
+    budgets: Mapped[dict] = mapped_column(JSON, default=dict)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    engagement_ref: Mapped[str] = mapped_column(String(256), default="")
+    attestation_text: Mapped[str] = mapped_column(Text, default="")
+    operator_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    # DRAFT | AWAITING_APPROVAL | APPROVED | CONSUMED | DENIED | EXPIRED
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="DRAFT")
+    approved_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProofAttempt(Base):
+    """One execution of a proof plan (PRD v2 §21.7). Lifecycle state and the
+    proof/recovery outcomes are independent dimensions; a successful proof with
+    failed recovery is both a demonstrated proof and an unresolved recovery
+    incident. No retry is hidden within an attempt."""
+
+    __tablename__ = "proof_attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    plan_id: Mapped[str] = mapped_column(String(36), ForeignKey("proof_plans.id"), nullable=False,
+                                         index=True)
+    # QUEUED|PREFLIGHT|RUNNING|STOPPING|RECOVERING|COMPLETED|FAILED|BLOCKED|TIMED_OUT|CANCELLED
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="QUEUED")
+    # DEMONSTRATED|ATTEMPTED_NOT_DEMONSTRATED|INCONCLUSIVE|BLOCKED|ERROR
+    proof_outcome: Mapped[str | None] = mapped_column(String(28))
+    # NOT_NEEDED|PENDING|VERIFIED_CLEAN|RESTORED_VERIFIED|RECOVERY_FAILED
+    recovery_outcome: Mapped[str] = mapped_column(String(20), nullable=False, default="NOT_NEEDED")
+    blocked_reason: Mapped[str] = mapped_column(String(512), default="")
+    measured_runtime_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ProofEvidence(Base):
+    """Bounded, nonce-correlated evidence for a proof attempt (PRD v2 §21.7).
+    DEMONSTRATED requires the per-attempt marker to be echoed and a negative
+    control to hold — the framework merely reporting success is insufficient."""
+
+    __tablename__ = "proof_evidence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    attempt_id: Mapped[str] = mapped_column(String(36), ForeignKey("proof_attempts.id"),
+                                            nullable=False, index=True)
+    marker: Mapped[str] = mapped_column(String(64), default="")
+    demonstrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    native_code: Mapped[str] = mapped_column(String(32), default="")
+    negative_control_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    redacted_summary: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

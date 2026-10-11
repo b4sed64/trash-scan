@@ -280,6 +280,14 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   baseline and no lock — otherwise the fixture is not proof-ready and execution is
   BLOCKED. Nothing here touches a hypervisor or a target; the real provider and
   the on-topology isolation/restore proof are a `LAB_PENDING` real-lab gate.
+- **One-shot proof execution (`services/proof.py`, PRD v2 §21.5/Phase 16).** The
+  immutable plan → attestation → admin approval → single bounded execution →
+  nonce-correlated evidence → separate recovery lifecycle. Fake-backed and
+  hard-gated: the `enable_lab_proof` flag (off), fixture readiness, a single
+  global active proof, one attempt per plan, and the 2-hour window. Every
+  execution resolves `BLOCKED` unless all gates pass — impossible in a non-lab
+  environment. `DEMONSTRATED` requires the per-attempt marker echoed back plus a
+  negative control; proof and recovery outcomes are tracked independently.
 
 ---
 

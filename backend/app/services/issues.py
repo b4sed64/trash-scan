@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Finding, FindingSighting, Issue, Occurrence, ScanExecution
+from . import review
 from .findings import severity_rank
 
 # Rule ids that mean the same condition regardless of which tool reported them.
@@ -113,6 +114,12 @@ def derive_issues(db: Session, execution: ScanExecution) -> dict:
                 seen_at=sighting.seen_at,
             ))
             n_occ += 1
+            # A genuinely new observation of a previously-verified issue reopens
+            # it (§12.3.6). Keyed on a newly-created occurrence, so re-projecting
+            # history via backfill (where the occurrence already exists) never
+            # spuriously reopens.
+            if f.status == "OBSERVED":
+                review.maybe_reopen(db, issue)
         else:
             existing.severity = sighting.severity
 

@@ -1,17 +1,22 @@
 """Findings and scan comparison (PRD §9.3, §11.4, §15)."""
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import (
     CandidateAssociation,
+    CoverageEntry,
     Finding,
     FindingSighting,
     Issue,
     Occurrence,
+    RiskException,
     ScanComparison,
     ScanExecution,
     User,
@@ -20,7 +25,7 @@ from ..services import AuditService, AuthorizationService
 from ..services.authorization_service import PermissionDenied
 from ..services.findings import severity_rank
 from ..services.issues import backfill_all
-from ..services import vulnintel
+from ..services import review, vulnintel
 from .deps import get_current_user, require_admin, require_csrf
 
 router = APIRouter(tags=["findings"])
@@ -257,6 +262,190 @@ def refresh_vulnintel(admin: User = Depends(require_admin),
     )
     db.commit()
     return result
+
+
+# --- issue review / remediation (PRD v2 Phase 12) ------------------------
+
+class ValidateBody(BaseModel):
+    state: str
+    reason: str = ""
+
+
+class AssignBody(BaseModel):
+    owner: str = ""
+    due_date: dt.datetime | None = None
+    desired_state: str = ""
+    plan: str = ""
+
+
+class MitigateBody(BaseModel):
+    note: str = ""
+
+
+class AcceptRiskBody(BaseModel):
+    reason: str
+    scope: str = ""
+    compensating_controls: str = ""
+    expires_at: dt.datetime
+
+
+class CloseBody(BaseModel):
+    reason: str
+    evidence_ref: str = ""
+    manually_verified: bool = False
+
+
+def _issue_or_404(db: Session, user: User, issue_id: str) -> Issue:
+    issue = db.get(Issue, issue_id)
+    if issue is None or not AuthorizationService.can_view_target(db, user, issue.target_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "issue not found")
+    return issue
+
+
+def _issue_review_dto(db: Session, issue: Issue) -> dict:
+    exceptions = db.execute(
+        select(RiskException).where(RiskException.issue_id == issue.id)
+        .order_by(RiskException.created_at.desc())
+    ).scalars().all()
+    now = dt.datetime.now(dt.timezone.utc)
+    return {
+        "id": issue.id, "issue_type": issue.issue_type, "severity": issue.severity,
+        "status": issue.status, "validation_state": issue.validation_state,
+        "remediation_state": issue.remediation_state, "owner": issue.owner,
+        "due_date": issue.due_date, "desired_state": issue.desired_state,
+        "remediation_plan": issue.remediation_plan, "reopened": issue.reopened,
+        "closed_at": issue.closed_at, "closure_reason": issue.closure_reason,
+        "verification_method": issue.verification_method,
+        "manually_verified": issue.manually_verified,
+        "risk_exceptions": [
+            {"id": e.id, "reason": e.reason, "scope": e.scope,
+             "compensating_controls": e.compensating_controls, "expires_at": e.expires_at,
+             "active": e.active, "overdue": bool(e.active and e.expires_at and e.expires_at < now)}
+            for e in exceptions
+        ],
+    }
+
+
+@router.post("/api/issues/{issue_id}/validate", dependencies=[Depends(require_csrf)])
+def validate_issue(issue_id: str, body: ValidateBody, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> dict:
+    issue = _issue_or_404(db, user, issue_id)
+    try:
+        review.set_validation(db, issue, body.state.upper(), f"user:{user.username}", body.reason)
+    except review.ReviewError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    db.commit()
+    return _issue_review_dto(db, issue)
+
+
+@router.post("/api/issues/{issue_id}/assign", dependencies=[Depends(require_csrf)])
+def assign_issue(issue_id: str, body: AssignBody, user: User = Depends(get_current_user),
+                 db: Session = Depends(get_db)) -> dict:
+    issue = _issue_or_404(db, user, issue_id)
+    review.assign(db, issue, owner=body.owner, due_date=body.due_date,
+                  desired_state=body.desired_state, plan=body.plan, actor=f"user:{user.username}")
+    db.commit()
+    return _issue_review_dto(db, issue)
+
+
+@router.post("/api/issues/{issue_id}/mitigate", dependencies=[Depends(require_csrf)])
+def mitigate_issue(issue_id: str, body: MitigateBody, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)) -> dict:
+    issue = _issue_or_404(db, user, issue_id)
+    review.set_mitigated(db, issue, f"user:{user.username}", body.note)
+    db.commit()
+    return _issue_review_dto(db, issue)
+
+
+@router.post("/api/issues/{issue_id}/accept-risk", dependencies=[Depends(require_csrf)])
+def accept_risk_issue(issue_id: str, body: AcceptRiskBody, admin: User = Depends(require_admin),
+                      db: Session = Depends(get_db)) -> dict:
+    issue = _issue_or_404(db, admin, issue_id)
+    try:
+        review.accept_risk(db, issue, reason=body.reason, scope=body.scope,
+                           controls=body.compensating_controls, expires_at=body.expires_at,
+                           admin=admin)
+    except review.ReviewError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    db.commit()
+    return _issue_review_dto(db, issue)
+
+
+@router.post("/api/issues/{issue_id}/close", dependencies=[Depends(require_csrf)])
+def close_issue(issue_id: str, body: CloseBody, admin: User = Depends(require_admin),
+                db: Session = Depends(get_db)) -> dict:
+    issue = _issue_or_404(db, admin, issue_id)
+    try:
+        review.verify_closure(db, issue, admin=admin, reason=body.reason,
+                              evidence_ref=body.evidence_ref,
+                              manually_verified=body.manually_verified)
+    except review.ReviewError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    db.commit()
+    return _issue_review_dto(db, issue)
+
+
+@router.get("/api/targets/{target_id}/report.json")
+def target_report_json(target_id: str, user: User = Depends(get_current_user),
+                       db: Session = Depends(get_db)) -> dict:
+    """Redacted JSON export (PRD v2 §13.2). Preserves candidates, excluded
+    dispositions (false-positive / accepted-risk / verified) with visible totals,
+    and the latest coverage so "what was assessed" is explicit. Evidence is the
+    already-bounded summary, never raw payloads."""
+    tgt = _access_or_404(db, user, target_id)
+    issues = db.execute(select(Issue).where(Issue.target_id == target_id)).scalars().all()
+    candidates = db.execute(
+        select(CandidateAssociation).where(CandidateAssociation.target_id == target_id)
+    ).scalars().all()
+    latest = db.execute(
+        select(ScanExecution).where(ScanExecution.target_id == target_id,
+                                    ScanExecution.state == "COMPLETED")
+        .order_by(ScanExecution.finished_at.desc()).limit(1)
+    ).scalar_one_or_none()
+    coverage = []
+    if latest is not None:
+        coverage = [
+            {"stage": c.stage, "check_family": c.check_family, "outcome": c.outcome,
+             "reason": c.reason}
+            for c in db.execute(
+                select(CoverageEntry).where(CoverageEntry.execution_id == latest.id)
+            ).scalars()
+        ]
+
+    def _excluded(i: Issue) -> bool:
+        return (i.remediation_state in review.EXCLUDED_REMEDIATION
+                or i.validation_state in review.EXCLUDED_VALIDATION)
+
+    issue_rows = [{
+        "id": i.id, "issue_type": i.issue_type, "severity": i.severity, "status": i.status,
+        "validation_state": i.validation_state, "remediation_state": i.remediation_state,
+        "owner": i.owner, "reopened": i.reopened, "excluded": _excluded(i),
+    } for i in issues]
+    active = [r for r in issue_rows if not r["excluded"]]
+    excluded = [r for r in issue_rows if r["excluded"]]
+
+    AuditService.append(db, actor=f"user:{user.username}", action="REPORT_EXPORTED",
+                        object_type="target", object_id=target_id, payload={"format": "json"})
+    db.commit()
+    return {
+        "target": {"id": target_id, "value": tgt.value, "kind": tgt.kind},
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "counts": {"active_total": len(active), "excluded_total": len(excluded),
+                   "candidate_total": len(candidates)},
+        "issues": issue_rows,
+        "candidates": [
+            {"cve_id": c.cve_id, "product": c.product, "version_evidence": c.version_evidence,
+             "applicability": c.applicability, "priority_lane": c.priority_lane,
+             "kev": c.kev, "cvss_score": c.cvss_score}
+            for c in candidates
+        ],
+        "coverage": coverage,
+        "notes": [
+            "Candidate CVEs require manual validation and are not counted as confirmed findings.",
+            "Excluded issues (false-positive / accepted-risk / verified) are retained here with totals.",
+            "A clean result only means 'not observed' where coverage shows the family was ASSESSED.",
+        ],
+    }
 
 
 def _comparison_dto(c: ScanComparison) -> dict:

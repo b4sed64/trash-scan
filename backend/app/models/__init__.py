@@ -478,9 +478,48 @@ class Issue(Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    # Review / remediation (PRD v2 §12) — three independent dimensions.
+    # Analyst validation: UNREVIEWED | VALIDATED | FALSE_POSITIVE | INCONCLUSIVE
+    validation_state: Mapped[str] = mapped_column(String(16), nullable=False, default="UNREVIEWED")
+    # Remediation workflow: OPEN | IN_PROGRESS | MITIGATED | RESOLVED_VERIFIED | RISK_ACCEPTED
+    remediation_state: Mapped[str] = mapped_column(String(20), nullable=False, default="OPEN")
+    owner: Mapped[str] = mapped_column(String(128), default="")
+    due_date: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    desired_state: Mapped[str] = mapped_column(String(256), default="")
+    remediation_plan: Mapped[str] = mapped_column(Text, default="")
+    # Set when a previously RESOLVED_VERIFIED issue is observed again (§12.3.6);
+    # prior closure metadata and ownership are preserved.
+    reopened: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    closed_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    closure_reason: Mapped[str] = mapped_column(String(512), default="")
+    closure_evidence_ref: Mapped[str] = mapped_column(String(256), default="")
+    verification_method: Mapped[str] = mapped_column(String(24), default="")  # RETEST_NEGATIVE | MANUAL
+    manually_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     __table_args__ = (
         UniqueConstraint("target_id", "issue_type", name="uq_issue"),
     )
+
+
+class RiskException(Base):
+    """An administrator-accepted risk on an issue (PRD v2 §12.1). Requires a
+    reason, affected scope, optional compensating controls, and an expiry/review
+    date. Accepted-risk issues stay in history and exports; overdue exceptions
+    become visible for renewed review."""
+
+    __tablename__ = "risk_exceptions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    issue_id: Mapped[str] = mapped_column(String(36), ForeignKey("issues.id"), nullable=False,
+                                          index=True)
+    reason: Mapped[str] = mapped_column(String(512), nullable=False)
+    scope: Mapped[str] = mapped_column(String(256), default="")
+    compensating_controls: Mapped[str] = mapped_column(String(512), default="")
+    created_by_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class Occurrence(Base):

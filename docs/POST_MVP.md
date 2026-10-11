@@ -14,8 +14,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0009_coverage_ledger` | `coverage_entries` table — per-execution, per-check-family coverage records (PRD v2 Phase 8). See "Coverage ledger" below. |
 | `0010_canonical_issues` | `issues` + `occurrences` tables — canonical issue identities projected from findings (PRD v2 Phase 9). Tables only; backfill is a separate idempotent service. See "Canonical issues" below. |
 | `0011_candidate_associations` | `candidate_associations` table — offline candidate CVE associations, kept separate from findings/issues (PRD v2 Phase 11). See "Offline CVE intelligence" below. |
+| `0012_issue_review` | Issue review/remediation columns (validation + remediation state, owner, due date, closure metadata) and a `risk_exceptions` table (PRD v2 Phase 12). See "Issue review & remediation" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0011_candidate_associations`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0012_issue_review`.
 
 ## One scan, many targets, manual start
 
@@ -62,6 +63,12 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/vulnintel/status` | Local CVE snapshot provider, effective date, schema version and stale flag (PRD v2 Phase 11). Offline; no target data sent. |
 | `GET /api/targets/{id}/candidates` | Candidate CVE associations for a target, ranked by priority lane. Separate from the actionable finding/issue counts. |
 | `POST /api/admin/vulnintel/refresh` | Administrator-only, audited (`ENRICHMENT_UPDATED`). Re-derives candidates for all completed scans from the current snapshot without a rescan. |
+| `POST /api/issues/{id}/validate` | Set analyst validation (`VALIDATED`/`FALSE_POSITIVE`/`INCONCLUSIVE`); target access; audited `ISSUE_VALIDATION_SET`. |
+| `POST /api/issues/{id}/assign` | Set owner / due date / desired state / plan (moves `OPEN`→`IN_PROGRESS`); audited `ISSUE_ASSIGNED`. |
+| `POST /api/issues/{id}/mitigate` | Mark `MITIGATED` (controls reduce impact, condition not asserted removed); audited `ISSUE_MITIGATED`. |
+| `POST /api/issues/{id}/accept-risk` | Administrator-only. Records a `risk_exceptions` row (reason + expiry required) and sets `RISK_ACCEPTED`; audited `RISK_ACCEPTED`. |
+| `POST /api/issues/{id}/close` | Administrator-only. Marks `RESOLVED_VERIFIED` only with a qualifying negative or manual evidence; audited `ISSUE_CLOSED`. 409 if neither is present. |
+| `GET /api/targets/{id}/report.json` | Redacted JSON export preserving candidates, excluded dispositions (with totals) and latest coverage; audited `REPORT_EXPORTED`. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -69,7 +76,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 ## New audit actions
 
 `PASSWORD_CHANGED`, `PASSWORD_RESET`, `PORT_SET_ADDED`, `PORT_SET_REMOVED`, `SCAN_STARTED`,
-`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`, `ENRICHMENT_UPDATED`. Failed logins
+`SCAN_PAUSED`, `SCAN_STOP_REQUESTED`, `ISSUES_BACKFILLED`, `ENRICHMENT_UPDATED`,
+`ISSUE_VALIDATION_SET`, `ISSUE_ASSIGNED`, `ISSUE_MITIGATED`, `RISK_ACCEPTED`, `ISSUE_CLOSED`,
+`ISSUE_REOPENED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -364,6 +373,41 @@ declare which protocol it's for.
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
 
+## Issue review & remediation (PRD v2 Phase 12)
+
+The canonical issue now carries three **independent** review dimensions (§12.1):
+scan observation/change (on the findings), analyst **validation**
+(`UNREVIEWED` / `VALIDATED` / `FALSE_POSITIVE` / `INCONCLUSIVE`), and
+**remediation** workflow (`OPEN` / `IN_PROGRESS` / `MITIGATED` /
+`RESOLVED_VERIFIED` / `RISK_ACCEPTED`). This is the result-quality release gate
+before any real exploitation work.
+
+- **Validation confirms the condition/applicability, never exploitability.**
+- **Closure is guarded (`services/review.py`):** an administrator can mark
+  `RESOLVED_VERIFIED` only with either a *qualifying negative* (the issue is
+  actually `NOT_OBSERVED` from the coverage-gated comparison) **or** explicit
+  recorded **manual evidence** — a bare clean scan is never sufficient (an
+  incomplete stage can produce a false negative). Closure records who/when/
+  reason/evidence/method (`RETEST_NEGATIVE` or `MANUAL`).
+- **Reopen:** when a previously verified issue is observed again, a new scan
+  flips it to `REOPENED` (remediation back to `OPEN`), preserves ownership and
+  prior closure metadata, and notifies administrators. Keyed on a newly-created
+  occurrence, so re-projecting history via backfill never spuriously reopens.
+- **Risk exceptions** (`risk_exceptions`): administrator-only, require a reason
+  and an expiry/review date; overdue exceptions are flagged for renewed review.
+  Accepted-risk and false-positive issues stay in history/exports; the default
+  active count excludes them with a visible excluded total.
+- **Redacted JSON export** (`GET /api/targets/{id}/report.json`): preserves
+  candidates, excluded dispositions (with totals) and the latest coverage, so
+  "what was assessed" and "what was set aside, and why" are both explicit.
+  Evidence is the already-bounded summary, never raw payloads.
+- New API (all audited): `POST /api/issues/{id}/validate|assign|mitigate`
+  (target access), `POST /api/issues/{id}/accept-risk|close` (administrator).
+
+Deferred: a fully detector-version-pinned "focused retest" engine — a retest is
+currently a normal compatible rescan whose coverage-gated `NOT_OBSERVED` result
+feeds closure; and administrator-set per-target exposure/criticality.
+
 ## Offline CVE intelligence (PRD v2 Phase 11)
 
 Candidate CVE correlation, entirely offline. Intelligence comes from a local,
@@ -524,11 +568,15 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **214 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **224 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
-end-to-end scan deriving candidates without inflating the finding count).
+end-to-end scan deriving candidates without inflating the finding count; Phase 12
+added `test_review.py` — validation/assignment transitions, risk-exception
+reason/expiry and overdue expiry, closure refused without a qualifying negative
+or manual evidence, reopen-after-verified-closure, scanner-cannot-close, and the
+redacted JSON export preserving excluded/candidate/coverage data).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

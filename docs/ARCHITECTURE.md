@@ -249,6 +249,13 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   (conservative: `CANDIDATE`/`UNKNOWN`, never auto-`SUPPORTED`), kept separate from
   findings/issues so they never inflate the actionable count. Priority is a
   deterministic §11.1 lane + reason codes, not a synthetic score.
+- **Review & remediation (`services/review.py`, PRD v2 Phase 12).** Each issue
+  carries independent validation and remediation state plus risk exceptions
+  (`risk_exceptions`, expiry-tracked). Closure to `RESOLVED_VERIFIED` is
+  administrator-only and requires a qualifying coverage-gated negative *or*
+  recorded manual evidence — never a bare clean scan; re-observation reopens a
+  verified issue. A redacted JSON export (`/api/targets/{id}/report.json`)
+  preserves candidates, excluded dispositions (with totals) and latest coverage.
 
 ---
 

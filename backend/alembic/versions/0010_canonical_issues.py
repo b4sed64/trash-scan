@@ -49,7 +49,7 @@ def upgrade() -> None:
         sa.Column("port", sa.Integer(), nullable=True),
         sa.Column("severity", sa.String(10), nullable=True),
         sa.Column("seen_at", sa.DateTime(timezone=True), nullable=True),
-        sa.UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence"),
+        sa.UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence_issue"),
     )
 
 

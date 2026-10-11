@@ -503,7 +503,7 @@ class Occurrence(Base):
     seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     __table_args__ = (
-        UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence"),
+        UniqueConstraint("issue_id", "execution_id", "finding_id", name="uq_occurrence_issue"),
     )
 
 

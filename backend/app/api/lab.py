@@ -16,17 +16,20 @@ from ..config import get_settings
 from ..db import get_db
 from ..models import (
     ControllerLease,
+    InteractionRecord,
     LabEnvironment,
     LabFixture,
     LabSession,
     ProofAttempt,
     ProofPlan,
     RecoveryRecord,
+    SessionGrant,
     Target,
     User,
 )
 from ..services import AuditService, AuthorizationService
-from ..services import lab, proof
+from ..services import guided, lab, proof
+from ..services import session_broker as broker
 from ..services.authorization_service import PermissionDenied
 from .deps import get_current_user, require_admin, require_csrf
 
@@ -327,3 +330,103 @@ def get_session(session_id: str, user: User = Depends(get_current_user),
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     _target_access_or_404(db, user, s.target_id)
     return _session_dto(db, s)
+
+
+# --- guided actions + controller lease (PRD v2 §22.5, Phase 20) -----------
+
+class LeaseBody(BaseModel):
+    takeover: bool = False
+
+
+class HeartbeatBody(BaseModel):
+    token: str
+
+
+class ActionBody(BaseModel):
+    action_id: str
+    params: dict = Field(default_factory=dict)
+    request_id: str
+    token: str
+
+
+def _session_or_404(db: Session, user: User, session_id: str) -> LabSession:
+    _sessions_enabled()
+    s = db.get(LabSession, session_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    _target_access_or_404(db, user, s.target_id)
+    return s
+
+
+@router.post("/api/sessions/{session_id}/lease", dependencies=[Depends(require_csrf)])
+def acquire_session_lease(session_id: str, body: LeaseBody, user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)) -> dict:
+    s = _session_or_404(db, user, session_id)
+    if body.takeover and user.role != "ADMINISTRATOR":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "takeover requires an administrator")
+    try:
+        lease = broker.acquire_lease(db, s, f"user:{user.username}", takeover=body.takeover)
+    except broker.SessionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    AuditService.append(db, actor=f"user:{user.username}", action="SESSION_LEASE_ACQUIRED",
+                        object_type="lab_session", object_id=s.id,
+                        payload={"takeover": body.takeover})
+    db.commit()
+    return {"lease_id": lease.id, "token": lease.fencing_token, "expires_at": lease.expires_at}
+
+
+@router.post("/api/sessions/{session_id}/lease/heartbeat", dependencies=[Depends(require_csrf)])
+def heartbeat_session_lease(session_id: str, body: HeartbeatBody,
+                            user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> dict:
+    s = _session_or_404(db, user, session_id)
+    lease = db.execute(
+        select(ControllerLease).where(ControllerLease.session_id == s.id,
+                                      ControllerLease.active.is_(True))
+    ).scalars().first()
+    if lease is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "no active lease")
+    try:
+        broker.heartbeat(db, lease, body.token)
+    except broker.SessionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    db.commit()
+    return {"ok": True, "expires_at": lease.expires_at}
+
+
+@router.post("/api/sessions/{session_id}/actions", dependencies=[Depends(require_csrf)])
+def dispatch_session_action(session_id: str, body: ActionBody,
+                            user: User = Depends(get_current_user),
+                            db: Session = Depends(get_db)) -> dict:
+    s = _session_or_404(db, user, session_id)
+    grant = db.get(SessionGrant, s.grant_id) if s.grant_id else None
+    if grant is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "session has no grant")
+    lease = db.execute(
+        select(ControllerLease).where(ControllerLease.session_id == s.id,
+                                      ControllerLease.active.is_(True))
+    ).scalars().first()
+    try:
+        rec = guided.dispatch(db, session=s, grant=grant, action_id=body.action_id,
+                              params=body.params, lease=lease, token=body.token,
+                              request_id=body.request_id, enabled=True)
+    except guided.GuidedError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    AuditService.append(db, actor=f"user:{user.username}", action="SESSION_ACTION",
+                        object_type="lab_session", object_id=s.id,
+                        payload={"action_id": body.action_id, "state": rec.state})
+    db.commit()
+    return {"id": rec.id, "action_id": rec.action_id, "state": rec.state,
+            "output": rec.output, "reason": rec.reason, "effect_claim": rec.effect_claim}
+
+
+@router.get("/api/sessions/{session_id}/interactions")
+def list_session_interactions(session_id: str, user: User = Depends(get_current_user),
+                              db: Session = Depends(get_db)) -> list[dict]:
+    s = _session_or_404(db, user, session_id)
+    rows = db.execute(
+        select(InteractionRecord).where(InteractionRecord.session_id == s.id)
+        .order_by(InteractionRecord.created_at)
+    ).scalars().all()
+    return [{"id": r.id, "action_id": r.action_id, "state": r.state, "output": r.output,
+             "reason": r.reason, "effect_claim": r.effect_claim} for r in rows]

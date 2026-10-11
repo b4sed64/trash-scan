@@ -787,6 +787,32 @@ class ControllerLease(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class InteractionRecord(Base):
+    """One guided-action interaction on a session (PRD v2 §22.5, Phase 20). The
+    intended action is persisted before dispatch; a client ``request_id`` makes
+    duplicate browser requests idempotent (one remote operation), though it never
+    claims exactly-once across an uncertain RPC. A timeout/disconnect after
+    dispatch leaves OUTCOME_UNKNOWN and is never auto-resent."""
+
+    __tablename__ = "interaction_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_sessions.id"),
+                                            nullable=False, index=True)
+    action_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_version: Mapped[str] = mapped_column(String(16), default="")
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # REQUESTED|AUTHORIZED|DISPATCHED|COMPLETED|OUTCOME_UNKNOWN|REJECTED|CANCELLED
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="REQUESTED")
+    output: Mapped[str] = mapped_column(Text, default="")
+    effect_claim: Mapped[str] = mapped_column(String(256), default="")
+    reason: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("session_id", "request_id", name="uq_interaction_request"),)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

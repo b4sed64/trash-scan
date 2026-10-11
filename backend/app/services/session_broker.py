@@ -44,6 +44,13 @@ def _now() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc)
 
 
+def _aware(v: dt.datetime | None) -> dt.datetime | None:
+    # SQLite drops tzinfo on reload; coerce naive timestamps to UTC for comparison.
+    if v is None:
+        return None
+    return v if v.tzinfo else v.replace(tzinfo=dt.timezone.utc)
+
+
 class SessionError(RuntimeError):
     pass
 
@@ -98,7 +105,8 @@ def accepts_input(session: LabSession, *, lease: ControllerLease | None, token: 
 
 
 def _lease_expired(lease: ControllerLease) -> bool:
-    return bool(lease.expires_at and _now() > lease.expires_at)
+    exp = _aware(lease.expires_at)
+    return bool(exp and _now() > exp)
 
 
 def _active_lease(db: DbSession, session_id: str) -> ControllerLease | None:

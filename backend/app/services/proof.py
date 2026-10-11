@@ -130,7 +130,10 @@ def _gate(db: Session, plan: ProofPlan) -> str | None:
         return "plan already consumed (one-shot; request a fresh plan)"
     if plan.state != "APPROVED":
         return f"plan is not approved (state {plan.state})"
-    if plan.expires_at and _now() > plan.expires_at:
+    expires = plan.expires_at
+    if expires is not None and not expires.tzinfo:
+        expires = expires.replace(tzinfo=dt.timezone.utc)
+    if expires and _now() > expires:
         return "approval window elapsed"
     module = _module(plan.module_id)
     if module is None or module.get("admission_state") != "ADMITTED":

@@ -311,6 +311,14 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   to match the expected fixture, else the session is quarantined and takes no
   input. Termination removes both listener and session; the parent attempt can't
   complete while a session is live. Gated off; a real listener is a lab gate.
+- **Guided session actions (`services/guided.py`, PRD v2 §22.5/Phase 20).** A
+  fixed, reviewed registry (whoami / os-context / read-marker /
+  capture-observation / terminate) with typed params and fixed implementations —
+  no free-form input. Dispatch is guarded immediately before acting (verified
+  session + valid controller lease + action in grant + typed params + per-session
+  budget), records an `InteractionRecord`, is idempotent on a client request id,
+  and leaves OUTCOME_UNKNOWN (never auto-resent) on a simulated timeout. Fake-
+  backed, gated off.
 
 ---
 

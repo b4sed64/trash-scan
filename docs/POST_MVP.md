@@ -20,8 +20,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0015_proof_execution` | `proof_plans` / `proof_attempts` / `proof_evidence` — one-shot proof lifecycle (PRD v2 Phase 16). Fake-backed and hard-gated; BLOCKED unless the lab-proof flag is on and a fixture is ready. See "One-shot proof execution" below. |
 | `0016_stream_events` | `stream_events` — durable, ordered status/output/evidence events for the live execution workspace (PRD v2 Phase 17). Fake streams; sanitized output. See "Live execution workspace" below. |
 | `0017_session_domain` | `session_grants` / `lab_sessions` / `controller_leases` — session identity, grants and single-writer leases (PRD v2 Phase 18). Fake-only; sessions disabled against real targets. See "Session domain" below. |
+| `0018_interaction_records` | `interaction_records` — guided-action interaction lifecycle (PRD v2 Phase 20). Predefined actions only; fake-backed and gated off. See "Guided session actions" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0017_session_domain`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0018_interaction_records`.
 
 ## One scan, many targets, manual start
 
@@ -88,6 +89,9 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `GET /api/proof/attempts/{id}` | Attempt state + proof/recovery outcomes + nonce-correlated evidence. |
 | `GET /api/proof/attempts/{id}/events?after=<seq>` | Durable status/output/evidence events for the live workspace, replayed after the reconnect cursor (PRD v2 Phase 17). |
 | `GET /api/sessions`, `GET /api/sessions/{id}` | Read-only session domain (PRD v2 Phase 18); 404 while `enable_guided_sessions` is off. Session data is flagged simulated. |
+| `POST /api/sessions/{id}/lease` (+ `/heartbeat`) | Acquire/refresh the single-writer controller lease (PRD v2 Phase 20); `takeover` is administrator-only. |
+| `POST /api/sessions/{id}/actions` | Dispatch a predefined guided action (typed params, request_id); audited `SESSION_ACTION`. |
+| `GET /api/sessions/{id}/interactions` | The session's interaction records. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -99,7 +103,8 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 `ISSUE_VALIDATION_SET`, `ISSUE_ASSIGNED`, `ISSUE_MITIGATED`, `RISK_ACCEPTED`, `ISSUE_CLOSED`,
 `ISSUE_REOPENED`, `LAB_ENVIRONMENT_REGISTERED`, `LAB_ISOLATION_VERIFIED`,
 `LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`, `PROOF_PLAN_CREATED`,
-`PROOF_PLAN_APPROVED`, `PROOF_ATTEMPT_BLOCKED`, `PROOF_ATTEMPT_COMPLETED`. Failed logins
+`PROOF_PLAN_APPROVED`, `PROOF_ATTEMPT_BLOCKED`, `PROOF_ATTEMPT_COMPLETED`,
+`SESSION_LEASE_ACQUIRED`, `SESSION_ACTION`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -393,6 +398,32 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## Guided session actions (PRD v2 Phase 20 — predefined, fake-backed)
+
+A small, fixed, reviewed set of guided actions on a verified session
+(`services/guided.py`, `interaction_records` via migration `0018`). Fake-backed
+and behind `enable_guided_sessions` (off).
+
+- **No free-form input.** The registry is `whoami`, `os-context`, `read-marker`,
+  `capture-observation`, `terminate` — each with a versioned id, a **typed
+  parameter schema** and a **fixed implementation**. Guided input is never built
+  by substituting untrusted strings into a command; free-form input lives only in
+  the separately-gated Phase 22 terminal.
+- **Guarded dispatch:** every call is checked immediately before dispatch — the
+  session must accept input (READY/CONTROLLED + a valid controller lease), the
+  action must be named in the session grant, params must validate, and a
+  per-session invocation budget (initially 20) must not be exceeded. Anything
+  failing yields a `REJECTED` `InteractionRecord` rather than acting.
+- **Idempotency + unknown outcomes:** a client `request_id` makes duplicate
+  submits return the same record (one remote operation). A simulated
+  post-dispatch timeout yields `OUTCOME_UNKNOWN` and is **never auto-resent**
+  (states: REQUESTED/AUTHORIZED/DISPATCHED/COMPLETED/OUTCOME_UNKNOWN/REJECTED/
+  CANCELLED). `terminate` closes the session.
+- New API (gated): `POST /api/sessions/{id}/lease` (+ heartbeat; takeover is
+  administrator-only), `POST /api/sessions/{id}/actions`,
+  `GET /api/sessions/{id}/interactions`. Output is run through the Phase 17
+  sanitizer.
 
 ## Internal listener & verified session establishment (PRD v2 Phase 19 — fake listener)
 
@@ -805,7 +836,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **277 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **286 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -838,7 +869,10 @@ disconnect stopping input; Phase 19 added `test_listener.py` — the listener
 boundary rejects wildcard/host/loopback/public and private-outside-boundary,
 matching callback reaches READY, mismatched callback quarantined with no input,
 establish refused when sessions disabled or the listener interface is bad, and
-terminate removes both listener and session).
+terminate removes both listener and session; Phase 20 added `test_guided.py` —
+in-grant action completes, out-of-grant/unknown rejected, dispatch requires a
+valid lease, required-param validation, idempotent request_id, unknown-outcome
+not auto-resent, per-session budget, and terminate closing the session).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

@@ -12,10 +12,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..db import get_db
 from ..models import (
+    ControllerLease,
     LabEnvironment,
     LabFixture,
+    LabSession,
     ProofAttempt,
     ProofPlan,
     RecoveryRecord,
@@ -278,3 +281,49 @@ def get_proof_attempt_events(attempt_id: str, after: int = 0,
         _target_access_or_404(db, user, plan.target_id)
     return {"attempt_id": attempt_id, "state": a.state, "after": after,
             "events": stream.events_after(db, attempt_id, after)}
+
+
+# --- session domain (PRD v2 §22.4, Phase 18) — read-only, feature-gated ----
+
+def _sessions_enabled() -> None:
+    if not get_settings().enable_guided_sessions:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "guided sessions are disabled")
+
+
+def _session_dto(db: Session, s: LabSession) -> dict:
+    lease = db.execute(
+        select(ControllerLease).where(ControllerLease.session_id == s.id,
+                                      ControllerLease.active.is_(True))
+    ).scalars().first()
+    return {"id": s.id, "attempt_id": s.attempt_id, "target_id": s.target_id,
+            "transport": s.transport, "state": s.state,
+            "quarantine_reason": s.quarantine_reason, "owner_id": s.owner_id,
+            "expires_at": s.expires_at, "accepts_input": s.state in ("READY", "CONTROLLED"),
+            "controller": lease.holder if lease else None,
+            "simulated": True}
+
+
+@router.get("/api/sessions")
+def list_sessions(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    _sessions_enabled()
+    rows = db.execute(select(LabSession)).scalars().all()
+    visible = []
+    for s in rows:
+        try:
+            _target_access_or_404(db, user, s.target_id)
+        except HTTPException:
+            continue
+        visible.append(_session_dto(db, s))
+    return {"sessions": visible,
+            "note": "Sessions are fake-only in this release; no real listener/target session exists."}
+
+
+@router.get("/api/sessions/{session_id}")
+def get_session(session_id: str, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)) -> dict:
+    _sessions_enabled()
+    s = db.get(LabSession, session_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    _target_access_or_404(db, user, s.target_id)
+    return _session_dto(db, s)

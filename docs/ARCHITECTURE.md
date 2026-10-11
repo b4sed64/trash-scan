@@ -295,6 +295,14 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   HTML-escaped, bounded) — the renderer is display only. Reconnect replays after
   the client's `seq` cursor; a stale cursor or a transcript-limit overflow
   surfaces a GAP rather than silent loss. Fake streams only — no target traffic.
+- **Session domain & broker (`services/session_broker.py`, PRD v2 §22.4/Phase 18).**
+  Product sessions have an opaque identity (never the reusable native framework
+  id); association needs attempt correlation + transport + reviewed fixture
+  proof. States run PENDING→…→CONTROLLED/QUARANTINED; unverified or ambiguous
+  sessions accept no input and an unexpected second session is quarantined.
+  A fenced single-writer `ControllerLease` enforces one controller across tabs;
+  admin takeover fences the old writer. Fake-only and behind
+  `enable_guided_sessions` (off) — sessions are disabled against real targets.
 
 ---
 

@@ -715,6 +715,78 @@ class StreamEvent(Base):
     __table_args__ = (UniqueConstraint("attempt_id", "seq", name="uq_stream_event_seq"),)
 
 
+class SessionGrant(Base):
+    """An approved session grant (PRD v2 §22.3, Phase 18): the admitted transport/
+    type, optional internal listener, the guided action IDs/versions permitted,
+    budgets and lifetime/idle policy. A one-shot approval can never become a
+    session grant; new action types / broader effects / terminal access need a
+    fresh grant."""
+
+    __tablename__ = "session_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    plan_id: Mapped[str] = mapped_column(String(36), ForeignKey("proof_plans.id"), nullable=False)
+    transport: Mapped[str] = mapped_column(String(48), nullable=False)
+    listener_interface: Mapped[str] = mapped_column(String(64), default="")
+    listener_port: Mapped[int | None] = mapped_column(Integer)
+    guided_action_ids: Mapped[list] = mapped_column(JSON, default=list)
+    budgets: Mapped[dict] = mapped_column(JSON, default=dict)
+    lifetime_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=600)
+    idle_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=120)
+    operator_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    state: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LabSession(Base):
+    """A product session with its OWN opaque identity (PRD v2 §22.4, Phase 18).
+
+    A native framework session ID may be reused after a restart, so it is never a
+    durable authorization identity; association combines attempt/job correlation,
+    transport identity and reviewed fixture proof. Unverified or ambiguous
+    sessions accept no operator input; an unexpected second session/target is
+    QUARANTINED, never silently adopted. Fake-only in this phase — sessions are
+    disabled against real targets."""
+
+    __tablename__ = "lab_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    attempt_id: Mapped[str] = mapped_column(String(36), ForeignKey("proof_attempts.id"),
+                                            nullable=False, index=True)
+    grant_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("session_grants.id"))
+    fixture_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_fixtures.id"))
+    target_id: Mapped[str] = mapped_column(String(36), ForeignKey("targets.id"))
+    framework_epoch: Mapped[str] = mapped_column(String(64), default="")
+    native_session_id: Mapped[str] = mapped_column(String(64), default="")
+    transport: Mapped[str] = mapped_column(String(48), default="")
+    observed_connection: Mapped[str] = mapped_column(String(256), default="")
+    owner_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    # PENDING|ESTABLISHED_UNVERIFIED|READY|CONTROLLED|STOPPING|CLOSED|LOST|QUARANTINED
+    state: Mapped[str] = mapped_column(String(24), nullable=False, default="PENDING")
+    quarantine_reason: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ControllerLease(Base):
+    """A single-writer lease across tabs/browsers/operators (PRD v2 §22.4). Each
+    dispatch carries the fencing token; a takeover revokes the old lease and
+    issues a new token so a stale writer can never act. Observers hold no lease."""
+
+    __tablename__ = "controller_leases"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_sessions.id"),
+                                            nullable=False, index=True)
+    holder: Mapped[str] = mapped_column(String(128), nullable=False)
+    fencing_token: Mapped[str] = mapped_column(String(36), nullable=False, default=_uuid)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

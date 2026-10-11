@@ -19,8 +19,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0014_lab_environment` | `lab_environments` / `lab_fixtures` / `recovery_records` — lab isolation/snapshot/recovery gating metadata (PRD v2 Phase 15). Fake controller; no execution. See "Lab isolation & recovery" below. |
 | `0015_proof_execution` | `proof_plans` / `proof_attempts` / `proof_evidence` — one-shot proof lifecycle (PRD v2 Phase 16). Fake-backed and hard-gated; BLOCKED unless the lab-proof flag is on and a fixture is ready. See "One-shot proof execution" below. |
 | `0016_stream_events` | `stream_events` — durable, ordered status/output/evidence events for the live execution workspace (PRD v2 Phase 17). Fake streams; sanitized output. See "Live execution workspace" below. |
+| `0017_session_domain` | `session_grants` / `lab_sessions` / `controller_leases` — session identity, grants and single-writer leases (PRD v2 Phase 18). Fake-only; sessions disabled against real targets. See "Session domain" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0016_stream_events`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0017_session_domain`.
 
 ## One scan, many targets, manual start
 
@@ -86,6 +87,7 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `POST /api/proof/plans/{id}/execute` | One-shot execution; resolves `BLOCKED` unless the lab-proof flag is on and the fixture is ready; audited `PROOF_ATTEMPT_*`. |
 | `GET /api/proof/attempts/{id}` | Attempt state + proof/recovery outcomes + nonce-correlated evidence. |
 | `GET /api/proof/attempts/{id}/events?after=<seq>` | Durable status/output/evidence events for the live workspace, replayed after the reconnect cursor (PRD v2 Phase 17). |
+| `GET /api/sessions`, `GET /api/sessions/{id}` | Read-only session domain (PRD v2 Phase 18); 404 while `enable_guided_sessions` is off. Session data is flagged simulated. |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -391,6 +393,34 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## Session domain (PRD v2 Phase 18 — fakes, sessions disabled against real targets)
+
+The session model + broker, fake-only — there is no real listener or target
+session (that's Phase 19), and all of this is additionally behind
+`enable_guided_sessions` (off). `services/session_broker.py` +
+`session_grants` / `lab_sessions` / `controller_leases` (migration `0017`).
+
+- **Product session identity** is an opaque id, not the native framework session
+  id (which may be reused after a restart). Association requires attempt
+  correlation + transport identity + reviewed fixture proof — no client-supplied
+  metadata alone. Native-ID reuse across framework epochs stays distinct.
+- **States** PENDING / ESTABLISHED_UNVERIFIED / READY / CONTROLLED / STOPPING /
+  CLOSED / LOST / QUARANTINED. **Unverified or ambiguous sessions accept no
+  input.** `verify()` promotes to READY only with fixture association, else
+  QUARANTINE. An unexpected second session for an attempt is QUARANTINED on
+  establish — unrelated sessions are never silently adopted.
+- **Single-writer `ControllerLease`** across tabs/operators with a fencing
+  token. A second operator cannot take control without an administrator
+  **takeover**, which deactivates the old lease and issues a new token so the
+  stale writer is fenced out; observers hold no lease and cannot write. On
+  disconnect the lease is released and input stops immediately; reconnect needs
+  fresh lease validation and never reruns work or extends lifetime.
+- Read-only, feature-gated API: `GET /api/sessions`, `GET /api/sessions/{id}`
+  (404 while `enable_guided_sessions` is off; session data flagged simulated).
+
+Remaining: the guided-action broker/dispatch and real listener establishment
+(Phases 19-20), each behind their own flags, grants and gates.
 
 ## Live execution workspace (PRD v2 Phase 17 — fake streams)
 
@@ -750,7 +780,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **257 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **263 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -775,7 +805,11 @@ marker echo + negative control, a bare framework success is not demonstrated,
 plans are one-shot, and approval requires the exact attestation; Phase 17 added
 `test_stream.py` — output sanitization (ANSI/control/HTML), monotonic seq +
 reconnect-cursor replay, output not overwriting status truth, transcript-limit
-GAP, and a proof attempt emitting durable events).
+GAP, and a proof attempt emitting durable events; Phase 18 added
+`test_session_broker.py` — unverified sessions accept no input, verify requires
+fixture association, ambiguous second sessions quarantined, native-ID reuse
+across epochs distinct, single-writer lease + admin-takeover fencing, and
+disconnect stopping input).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

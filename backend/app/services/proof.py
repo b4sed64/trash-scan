@@ -33,6 +33,7 @@ from ..models import (
     ProofPlan,
 )
 from . import lab
+from . import stream
 from .audit_service import AuditService
 from .exploitability import list_modules
 from .framework import CheckJob, VULNERABLE, get_framework_adapter, interpret_native_result
@@ -176,6 +177,8 @@ def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
                                blocked_reason=reason[:512], started_at=_now(), finished_at=_now())
         db.add(attempt)
         db.flush()
+        stream.append_status(db, attempt.id, "BLOCKED")
+        stream.append_gap(db, attempt.id, reason)
         AuditService.append(db, actor="system:worker", action="PROOF_ATTEMPT_BLOCKED",
                             object_type="proof_attempt", object_id=attempt.id,
                             payload={"reason": reason[:256]})
@@ -193,6 +196,7 @@ def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
     plan.consumed_at = _now()
     lab.acquire_lock(fixture, f"attempt:{attempt.id}")
     attempt.state = "RUNNING"
+    stream.append_status(db, attempt.id, "RUNNING")
     started = _now()
     adapter = _framework()
     try:
@@ -200,15 +204,18 @@ def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
                                               options=plan.options, idempotency_key=attempt.id))
         native = adapter.job_result(job_id)
         proof_outcome, demonstrated, neg = _evaluate(native, plan.proof_marker)
+        summary = f"native={native.native_code}; marker_echoed={demonstrated}"
         db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker,
                              demonstrated=demonstrated, native_code=native.native_code,
-                             negative_control_passed=neg,
-                             redacted_summary=f"native={native.native_code}; marker_echoed={demonstrated}"))
+                             negative_control_passed=neg, redacted_summary=summary))
         attempt.proof_outcome = proof_outcome
+        stream.append_output(db, attempt.id, f"check returned: {native.native_code}")
+        stream.append_evidence(db, attempt.id, summary)
     except Exception as exc:  # noqa: BLE001 - a module/runner failure is ERROR, not a crash
         attempt.proof_outcome = ERROR
         db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker, demonstrated=False,
                              redacted_summary=f"error: {str(exc)[:200]}"))
+        stream.append_gap(db, attempt.id, "runner error")
 
     attempt.measured_runtime_ms = int((_now() - started).total_seconds() * 1000)
 
@@ -220,6 +227,7 @@ def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
     lab.release_lock(fixture)
     attempt.state = "COMPLETED"
     attempt.finished_at = _now()
+    stream.append_status(db, attempt.id, "COMPLETED")
     AuditService.append(db, actor="system:worker", action="PROOF_ATTEMPT_COMPLETED",
                         object_type="proof_attempt", object_id=attempt.id,
                         payload={"proof_outcome": attempt.proof_outcome,

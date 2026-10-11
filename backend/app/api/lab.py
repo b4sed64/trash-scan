@@ -259,3 +259,22 @@ def get_proof_attempt(attempt_id: str, user: User = Depends(get_current_user),
     if plan is not None:
         _target_access_or_404(db, user, plan.target_id)
     return _attempt_dto(db, a)
+
+
+@router.get("/api/proof/attempts/{attempt_id}/events")
+def get_proof_attempt_events(attempt_id: str, after: int = 0,
+                             user: User = Depends(get_current_user),
+                             db: Session = Depends(get_db)) -> dict:
+    """Durable status/output/evidence events for the live workspace, replayed
+    strictly after the ``after`` cursor (reconnect). Status in the attempt row is
+    the authoritative lifecycle truth; these events never override it. Access is
+    re-checked here and on every WebSocket input frame (§22.6)."""
+    from ..services import stream
+    a = db.get(ProofAttempt, attempt_id)
+    if a is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "attempt not found")
+    plan = db.get(ProofPlan, a.plan_id)
+    if plan is not None:
+        _target_access_or_404(db, user, plan.target_id)
+    return {"attempt_id": attempt_id, "state": a.state, "after": after,
+            "events": stream.events_after(db, attempt_id, after)}

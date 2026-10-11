@@ -288,6 +288,13 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   execution resolves `BLOCKED` unless all gates pass — impossible in a non-lab
   environment. `DEMONSTRATED` requires the per-attempt marker echoed back plus a
   negative control; proof and recovery outcomes are tracked independently.
+- **Live execution workspace streaming (`services/stream.py`, PRD v2 §22.6/Phase 17).**
+  Durable, ordered `StreamEvent`s (STATUS/OUTPUT/EVIDENCE/GAP) per attempt with a
+  monotonic `seq`. Status in the attempt row is authoritative; output never
+  overwrites it. Output is sanitized at write time (ANSI/control stripped,
+  HTML-escaped, bounded) — the renderer is display only. Reconnect replays after
+  the client's `seq` cursor; a stale cursor or a transcript-limit overflow
+  surfaces a GAP rather than silent loss. Fake streams only — no target traffic.
 
 ---
 

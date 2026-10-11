@@ -18,8 +18,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0013_exploitability_assessment` | `exploitability_assessments` table — offline, analytical issue→module assessments (PRD v2 Phase 13). No execution. See "Exploitability assessment" below. |
 | `0014_lab_environment` | `lab_environments` / `lab_fixtures` / `recovery_records` — lab isolation/snapshot/recovery gating metadata (PRD v2 Phase 15). Fake controller; no execution. See "Lab isolation & recovery" below. |
 | `0015_proof_execution` | `proof_plans` / `proof_attempts` / `proof_evidence` — one-shot proof lifecycle (PRD v2 Phase 16). Fake-backed and hard-gated; BLOCKED unless the lab-proof flag is on and a fixture is ready. See "One-shot proof execution" below. |
+| `0016_stream_events` | `stream_events` — durable, ordered status/output/evidence events for the live execution workspace (PRD v2 Phase 17). Fake streams; sanitized output. See "Live execution workspace" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0015_proof_execution`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0016_stream_events`.
 
 ## One scan, many targets, manual start
 
@@ -84,6 +85,7 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 | `POST /api/proof/plans/{id}/approve` | Administrator-only; requires the exact proof attestation; audited `PROOF_PLAN_APPROVED`. |
 | `POST /api/proof/plans/{id}/execute` | One-shot execution; resolves `BLOCKED` unless the lab-proof flag is on and the fixture is ready; audited `PROOF_ATTEMPT_*`. |
 | `GET /api/proof/attempts/{id}` | Attempt state + proof/recovery outcomes + nonce-correlated evidence. |
+| `GET /api/proof/attempts/{id}/events?after=<seq>` | Durable status/output/evidence events for the live workspace, replayed after the reconnect cursor (PRD v2 Phase 17). |
 
 `POST /api/targets/{id}/scans` is unchanged and still returns a single execution (plus its `scan_id`).
 `POST /api/scans/{execution_id}/cancel` still cancels a single execution.
@@ -389,6 +391,33 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## Live execution workspace (PRD v2 Phase 17 — fake streams)
+
+The streaming contract for the execution workspace, built on fake streams with
+no target traffic (`services/stream.py`, `stream_events` via migration `0016`).
+
+- **Durable, ordered events** per attempt with a monotonic `seq`, server UTC
+  timestamp, and type (`STATUS` / `OUTPUT` / `EVIDENCE` / `GAP`). **Status in the
+  attempt row is the authoritative lifecycle truth** — output events never
+  overwrite it.
+- **Output is sanitized at write time:** ANSI and control sequences stripped,
+  HTML-escaped, per-payload bounded. Synthetic/fixture output is still treated as
+  untrusted. The terminal renderer is display only, not an execution boundary.
+- **Reconnect replays strictly after the client's last `seq` cursor**; a cursor
+  older than the earliest retained event surfaces a `GAP` rather than silent
+  loss. A `GET /api/proof/attempts/{id}/events?after=<seq>` endpoint provides the
+  replay (access re-checked each call). Proof execution now emits durable
+  status/output/evidence events, so a (BLOCKED) attempt already has a workspace
+  history.
+- **Bounded transcript** (~1 MiB/attempt): overflow emits a single `GAP`
+  truncation marker and stops appending output (backpressure), rather than
+  growing unbounded.
+
+The progressive browser UI and the live WebSocket tail are the remaining
+increment; the durable event store + replay contract + sanitization are in
+place and tested (unauthorized observer, reconnect cursor, gaps, malicious
+output, transcript overflow).
 
 ## One-shot proof execution (PRD v2 Phase 16 — fake-backed, hard-gated)
 
@@ -721,7 +750,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **251 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **257 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -743,7 +772,10 @@ failed restore records RECOVERY_FAILED and keeps it not-ready, isolation failure
 stays not-verified, and exclusive fixture locking; Phase 16 added `test_proof.py` — execution BLOCKED
 when the flag is off and when the fixture is not ready, DEMONSTRATED requires
 marker echo + negative control, a bare framework success is not demonstrated,
-plans are one-shot, and approval requires the exact attestation).
+plans are one-shot, and approval requires the exact attestation; Phase 17 added
+`test_stream.py` — output sanitization (ANSI/control/HTML), monotonic seq +
+reconnect-cursor replay, output not overwriting status truth, transcript-limit
+GAP, and a proof attempt emitting durable events).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

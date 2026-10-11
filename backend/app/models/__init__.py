@@ -693,6 +693,28 @@ class ProofEvidence(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class StreamEvent(Base):
+    """A durable, ordered status/output/evidence event for the live execution
+    workspace (PRD v2 §22.6, Phase 17). Status is database truth; output events
+    never overwrite it. Output payloads are sanitized (ANSI/control stripped,
+    HTML-escaped) at write time — the terminal renderer is display only, not an
+    execution boundary. Reconnect replays from the last acknowledged ``seq``; a
+    missing range surfaces as a GAP event rather than silent loss."""
+
+    __tablename__ = "stream_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    attempt_id: Mapped[str] = mapped_column(String(36), ForeignKey("proof_attempts.id"),
+                                            nullable=False, index=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(16), nullable=False)  # STATUS|OUTPUT|EVIDENCE|GAP
+    payload: Mapped[str] = mapped_column(Text, default="")
+    server_ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("attempt_id", "seq", name="uq_stream_event_seq"),)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

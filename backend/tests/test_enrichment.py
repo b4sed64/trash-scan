@@ -42,6 +42,15 @@ def test_tls_findings_flags_self_signed_and_mismatch():
     assert {"tls-self-signed", "tls-hostname-mismatch"} <= ids
 
 
+def test_tls_hostname_mismatch_suppressed_on_ip_only_scan():
+    # §8.4: an IP target has no intended hostname, so a SAN "mismatch" is meaningless
+    tls = {"port": "443", "mismatched": True, "serial": "9", "not_after": "2099-01-01T00:00:00Z"}
+    ip_ids = {f.rule_id for f in tls_findings(tls, "10.10.5.20")}
+    assert "tls-hostname-mismatch" not in ip_ids
+    host_ids = {f.rule_id for f in tls_findings(tls, "web.lab.example.com")}
+    assert "tls-hostname-mismatch" in host_ids
+
+
 def test_tls_findings_deprecated_protocol_severity_scales_with_age():
     base = {"port": "443", "not_after": "2099-01-01T00:00:00Z"}
     tls10 = tls_findings({**base, "tls_version": "tls10"}, "x.example.com")
@@ -82,6 +91,19 @@ def test_dns_posture_flags_permissive_spf_and_monitor_only_dmarc():
     ]
     ids = {f.rule_id for f in dns_posture_findings(obs, "example.com")}
     assert ids == {"dns-spf-permissive", "dns-dmarc-policy-none"}
+
+
+def test_dmarc_p_none_and_missing_caa_are_informational():
+    # §8.4: p=none is a valid monitoring stage; missing CAA is optional hardening
+    obs = [
+        _obs("TXT", "v=spf1 include:_spf.example.com ~all", "example.com"),
+        _obs("TXT", "v=DMARC1; p=none;", "_dmarc.example.com"),
+    ]
+    by_rule = {f.rule_id: f for f in dns_posture_findings(obs, "example.com")}
+    assert by_rule["dns-dmarc-policy-none"].severity == "INFO"
+    # framed as a valid rollout stage, not as proof of spoofability
+    assert "valid rollout stage" in by_rule["dns-dmarc-policy-none"].description.lower()
+    assert by_rule["dns-caa-missing"].severity == "INFO"
 
 
 def test_dns_posture_clean_when_well_configured():

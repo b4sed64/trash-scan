@@ -95,18 +95,27 @@ def dns_posture_findings(observations: list[DiscoveredObservation], domain: str)
             evidence={"txt_records": txt_dmarc},
         ))
     elif "p=none" in dmarc.lower():
+        # §8.4: p=none is monitoring — a valid rollout stage, not an invalid
+        # record and not proof of spoofability. Do not blindly demand p=reject.
         findings.append(_mk(
-            "dns-dmarc-policy-none", "LOW", "DMARC Policy Set To Monitor Only (p=none)",
-            "The DMARC policy is 'none', so failing messages are reported but not rejected/quarantined.",
+            "dns-dmarc-policy-none", "INFO", "DMARC Policy In Monitoring Mode (p=none)",
+            "The DMARC policy is 'none' (monitor): failing mail is reported but not "
+            "quarantined or rejected. This is a valid rollout stage, not proof the domain "
+            "is spoofable. Progress to quarantine/reject only after confirming legitimate "
+            "mail flows pass DMARC.",
             domain, evidence_key="dmarc-policy-none",
             evidence_summary=f"_dmarc.{domain} DMARC record: {dmarc}",
             evidence={"dmarc": dmarc},
         ))
 
     if not caa_apex:
+        # §8.4: missing CAA is optional hardening, normally informational; a
+        # parent-domain CAA policy may already apply (not evaluated here).
         findings.append(_mk(
-            "dns-caa-missing", "LOW", "No CAA Record (Any CA May Issue Certificates)",
-            "No CAA record restricts which certificate authorities may issue for this domain.",
+            "dns-caa-missing", "INFO", "No CAA Record (Optional CA Hardening)",
+            "No CAA record was found at the apex. CAA is optional hardening that restricts "
+            "which certificate authorities may issue for this domain; a parent-domain policy "
+            "may already apply. Absent CAA is informational, not a vulnerability.",
             domain, evidence_key="caa-missing",
             evidence_summary=f"{domain} has no CAA record",
             evidence={},

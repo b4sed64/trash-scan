@@ -49,6 +49,14 @@ def _rule_hash(rule_id: str, version: str = "v1") -> str:
     return hashlib.sha256(f"trashscan-internal-rule:{rule_id}:{version}".encode()).hexdigest()
 
 
+def _host_is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
+
+
 def _parse_cert_time(value: str) -> dt.datetime | None:
     if not value:
         return None
@@ -102,7 +110,8 @@ def tls_findings(tls: dict, host: str) -> list[DiscoveredFinding]:
             if 0 <= days_left <= _EXPIRING_SOON_DAYS:
                 findings.append(_mk(
                     "tls-cert-expiring-soon", "MEDIUM", "TLS Certificate Expiring Soon",
-                    f"The certificate expires within {_EXPIRING_SOON_DAYS} days.",
+                    f"The certificate expires within {_EXPIRING_SOON_DAYS} days. This is "
+                    "operational renewal guidance, not evidence of compromise.",
                     evidence_key=f"expiring:{serial or subject}",
                     evidence_summary=f"Certificate for {subject} expires {not_after} ({days_left}d left)",
                     evidence={"subject": subject, "not_after": not_after, "days_left": days_left},
@@ -117,7 +126,9 @@ def tls_findings(tls: dict, host: str) -> list[DiscoveredFinding]:
             evidence={"subject": subject, "issuer": issuer},
         ))
 
-    if tls.get("mismatched"):
+    # §8.4: an IP-only scan does not imply a hostname mismatch — there is no
+    # intended hostname to validate the SAN against, so suppress it for bare IPs.
+    if tls.get("mismatched") and not _host_is_ip(host):
         findings.append(_mk(
             "tls-hostname-mismatch", "MEDIUM", "TLS Certificate Hostname Mismatch",
             "The certificate's subject/SAN does not cover the host it was presented for.",

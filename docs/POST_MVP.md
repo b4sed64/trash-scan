@@ -370,9 +370,30 @@ credential probe regardless of Nmap's `safe` category. It is removed from
 `_findings_for_script` no longer dispatches it. The `nmap.snmp_public_finding`
 helper is kept **dormant** (still unit-tested) for a future, separately-reviewed
 re-enable. `nbstat` (NetBIOS name disclosure — no credential) stays as the only
-UDP-gated script. The remaining §8.4 accuracy fixes (soft-404 / characteristic
-content, TLS hostname-mismatch on IP-only scans, DMARC `p=none` as monitoring,
-header-context rules) are the next work units.
+UDP-gated script.
+
+Second work unit — §8.4 contextual accuracy fixes:
+
+- **TLS hostname-mismatch is suppressed on IP-only scans** (`httpx.tls_findings`):
+  a bare-IP target has no intended hostname to validate the certificate SAN
+  against, so `tls-hostname-mismatch` no longer fires for IPs (it still fires for
+  hostname targets). The expiring-soon finding is reworded as operational renewal
+  guidance, not evidence of compromise.
+- **DMARC `p=none` is informational monitoring** (`dnsx.dns_posture_findings`):
+  downgraded to INFO and reworded — it is a valid rollout stage, not proof the
+  domain is spoofable, and the guidance no longer blindly demands `p=reject`
+  before confirming legitimate mail flows pass DMARC. Missing CAA is likewise
+  INFO (optional hardening; a parent-domain policy may already apply).
+- **Soft-404 / characteristic content:** assessed — the existing exposure
+  templates (`env-file`, `git-config`, `phpinfo`, `directory-listing`, the
+  default-page detectors) already match on characteristic body content, never
+  status-200 alone, so §8.4's requirement is satisfied by design. The bounded
+  non-existent-path control for *ambiguous* routes is recorded as a
+  template-admission requirement (§8.3) for any future weak-signal detector, not
+  a change to the current ones.
+
+Remaining §8.4 units (header-context / HSTS-CSP nuance, SPF qualifier malformed
+cases, RDAP grace-period semantics) are not yet done.
 
 ## Canonical issues (PRD v2 Phase 9)
 

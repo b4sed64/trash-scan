@@ -330,7 +330,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**298 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**306 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
@@ -389,3 +389,11 @@ Trash Scan performs passive discovery and authorized active reconnaissance only.
 of service, or provide detection-evasion controls. Scope, authorization and the audit trail
 are product behaviour, not add-ons. The operator remains responsible for holding written
 permission for every target and lab segment.
+
+The PRD v2 exploitability/proof/session capabilities (lab checks, one-shot proof, verified
+sessions, administrator terminal) are **fake-backed and disabled by default**; each is behind
+its own feature flag plus a plan/attestation/approval and real-lab/recovery gate, and none can
+contact or affect a real target in this build. Only the offline exploitability assessment is on
+by default. `GET /api/capabilities` publishes the authoritative, config-derived support matrix
+(and flags synthetic scan data); see [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) for the matrix
+and the real-lab gates.

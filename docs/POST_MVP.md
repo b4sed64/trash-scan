@@ -427,6 +427,25 @@ proof-evidence infra.
 
 Remaining: the session-timeline UI.
 
+## Integrated release acceptance (PRD v2 Phase 23)
+
+A consolidation/verification phase — no new schema (head stays `0020_terminal`).
+
+- **Capability support matrix** (`services/capabilities.py`) published at
+  `GET /api/capabilities` (authenticated). Every row is computed from
+  configuration flags + fixed build facts, **never from a result**: `enabled`
+  mirrors a flag, `backing` states real/fake/offline for this build, and
+  `real_lab_gate` names the authorized-lab demonstration still required. This is
+  the invariant — a fake result can never make a disabled mode look enabled, nor a
+  fake-backed mode look real.
+- **Fake/demo data separation.** `capabilities.data_provenance()` marks scan data
+  `synthetic` whenever the scanner is not in `real` mode, and the block is now
+  embedded in `report.json` so fake/demo data is never read as real findings.
+- **Integrated checks** (offline/fake): full suite green under the fake scanner;
+  default exploitation/session flags off; the full Alembic chain reversible on
+  Postgres (base→head→base→head). See `docs/ACCEPTANCE.md` → "PRD v2 release
+  acceptance" for the matrix and the real-lab gate.
+
 ## Administrator target-session terminal (PRD v2 Phase 22 — fake channel, gated off)
 
 The single free-form-input capability, and the most restricted one
@@ -895,7 +914,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **298 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **306 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -938,7 +957,11 @@ and reconciliation marking an orphan LOST without releasing the fixture lock;
 Phase 22 added `test_terminal.py` — a grant needs the exact attestation and the
 flag, input is refused without an active grant or a valid lease, an over-4-KiB
 frame is rejected but recorded, a duplicate request_id never replays, and
-`capabilities()` discloses no-PTY/command-output-only).
+`capabilities()` discloses no-PTY/command-output-only; Phase 23 added
+`test_release_acceptance.py` — exploitation/session flags default off, the
+capability matrix mirrors flags (never a result) and keeps fake-backed modes
+fake even when enabled, synthetic scan data is labelled in the provenance block
+and the report export, and the matrix is published only to authenticated users).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

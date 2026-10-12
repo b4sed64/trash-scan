@@ -445,9 +445,11 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
     AuditService.append(db, actor=f"user:{user.username}", action="REPORT_EXPORTED",
                         object_type="target", object_id=target_id, payload={"format": "json"})
     db.commit()
+    from ..services import capabilities
     return {
         "target": {"id": target_id, "value": tgt.value, "kind": tgt.kind},
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "data_provenance": capabilities.data_provenance(),
         "counts": {"active_total": len(active), "excluded_total": len(excluded),
                    "candidate_total": len(candidates)},
         "issues": issue_rows,

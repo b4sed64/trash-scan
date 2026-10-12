@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -23,9 +23,11 @@ from .api import (
     schedules,
     targets,
 )
+from .api.deps import get_current_user
 from .bootstrap import create_all, seed_builtin_deny_rules
 from .config import get_settings
-from .services import ScopeError
+from .models import User
+from .services import ScopeError, capabilities
 from .services.authorization_service import PermissionDenied
 
 
@@ -74,6 +76,12 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     def health() -> dict:
         return {"status": "ok"}
+
+    @app.get("/api/capabilities")
+    def capabilities_matrix(_: User = Depends(get_current_user)) -> dict:
+        """Publish the mode-specific capability support matrix (PRD v2 Phase 23).
+        Derived from configuration and build facts only — never from a result."""
+        return capabilities.support_matrix()
 
     return app
 

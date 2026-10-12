@@ -1,7 +1,7 @@
 # MVP acceptance criteria (PRD §24)
 
 Each criterion mapped to where it is implemented and demonstrated. "Test" refers to
-`backend/tests/`; run the full suite (298 tests) with `docker run --rm trashscan-api pytest`.
+`backend/tests/`; run the full suite (306 tests) with `docker run --rm trashscan-api pytest`.
 Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any verdict below.
 
 | # | Criterion | Status | Evidence |
@@ -30,3 +30,55 @@ Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any v
 
 Legend: ✅ implemented & tested · ⚠️ gated implemented, disabled by default pending the
 Phase 0 network/raw-packet spike.
+
+## PRD v2 release acceptance — Phases 7–23
+
+Phases 7–12 raised result quality (coverage, issue lifecycle, CVE candidates,
+review/closure). Phases 13–22 added the exploitability/proof/session capabilities,
+**fake-backed and gated off**, each behind its own flag, plan/attestation/approval
+and lab/recovery gate. Phase 23 consolidates and publishes the result.
+
+### Capability support matrix
+
+Published at runtime by `GET /api/capabilities` (authenticated), computed from
+configuration and fixed build facts — **never from a result**, so no mode is ever
+reported enabled because a (fake) result looked successful. `data_provenance`
+marks scan data `synthetic` whenever the scanner is not in `real` mode, and the
+same block is embedded in `report.json` so fake/demo data is never mistaken for
+real findings.
+
+| Capability | Default flag | Backing in this build | Real-lab gate still required |
+|---|---|---|---|
+| Authorized scanning | on (core) | real adapters; **synthetic in fake mode** | Authorized scan of the supported lab with real adapters; verify coverage + patched negatives |
+| Exploitability assessment | `enable_exploitability_assessment` = **on** | offline/analytical | None — no target contact, no execution |
+| Active lab prerequisite checks | `enable_lab_checks` = **off** | fake | Active checks against a proven-isolated surface, own plan/attestation/approval |
+| One-shot proof execution | `enable_lab_proof` = **off** | fake | Controlled one-shot proof on a registered, isolated fixture with recovery verified |
+| Verified sessions & guided actions | `enable_guided_sessions` = **off** | fake | Internal listener on a proven-isolated topology, verified session, predefined actions |
+| Administrator target-session terminal | `enable_lab_terminal` = **off** | fake | Real command-output channel on an admitted, verified session within a granted time |
+| External OSINT enrichment | `enable_external_osint` = **off** | real | None — opt-in external lookups |
+
+### Integrated checks performed here (offline/fake)
+
+- **Full suite** green with the fake scanner (`docker run --rm trashscan-api pytest`,
+  or `-e TRASHSCAN_SCANNER_MODE=fake`). Running pytest inside the live `api`
+  service inherits `SCANNER_MODE=real` and will fail pipeline tests — use fake.
+- **Fake/demo data separation** — `test_release_acceptance.py` asserts synthetic
+  data is labelled in `data_provenance` and the report export, and that the
+  capability matrix mirrors flags only (a flag never makes a fake mode real).
+- **Default flags** — the four exploitation/session modes default off; only the
+  offline assessment is on.
+- **Migration/restore fixture** — the full Alembic chain is reversible on
+  Postgres (base→head→base→head, ending at `0020_terminal`), verified on a
+  throwaway database so no dev data is touched.
+
+### Real-lab gate (cannot be satisfied in this dev environment)
+
+The end-to-end chain — authorized scan → candidate/assessment → approved proof →
+optional verified session → guided actions → evidence → stop/recovery →
+remediation/retest, with patched negatives and all enabled mode boundaries — must
+be demonstrated on the supported Windows lab. Until then the exploitation/session
+modes remain fake-backed and disabled.
+
+**Handoff:** enabled modes (offline assessment, scanning) have test evidence;
+disabled optional modes are documented above with their gates. No claim of broad
+vulnerability absence or universal exploitability is made.

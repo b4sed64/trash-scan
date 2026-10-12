@@ -183,6 +183,12 @@ requires a separate plan, typed attestation, a fresh administrator approval, and
 real-lab/recovery gates. In this release nothing in this section performs any active
 operation — assessment is purely analytical.
 
+The authoritative, runtime view of these defaults is published at
+`GET /api/capabilities` (authenticated). It is computed from the flags above and
+fixed build facts only — never from a scan/proof result — so no mode is ever
+reported enabled because a (fake) result looked successful. It also reports the
+active scanner mode and whether scan data is `synthetic` (fake mode).
+
 ---
 
 ## Enabling TLS (summary)

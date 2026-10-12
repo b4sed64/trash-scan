@@ -426,6 +426,22 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
     active = [r for r in issue_rows if not r["excluded"]]
     excluded = [r for r in issue_rows if r["excluded"]]
 
+    # Session evidence / recovery summary (PRD v2 Phase 21): distinguishes
+    # demonstrated effect, session state, transcript gaps and recovery incidents.
+    from ..models import LabSession, ProofPlan
+    from ..services import session_evidence
+    plan_ids = [p.id for p in db.execute(
+        select(ProofPlan).where(ProofPlan.target_id == target_id)).scalars()]
+    sessions = []
+    if plan_ids:
+        from ..models import ProofAttempt
+        attempt_ids = [a.id for a in db.execute(
+            select(ProofAttempt).where(ProofAttempt.plan_id.in_(plan_ids))).scalars()]
+        if attempt_ids:
+            for s in db.execute(
+                    select(LabSession).where(LabSession.attempt_id.in_(attempt_ids))).scalars():
+                sessions.append(session_evidence.session_report(db, s))
+
     AuditService.append(db, actor=f"user:{user.username}", action="REPORT_EXPORTED",
                         object_type="target", object_id=target_id, payload={"format": "json"})
     db.commit()
@@ -442,10 +458,12 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
             for c in candidates
         ],
         "coverage": coverage,
+        "sessions": sessions,
         "notes": [
             "Candidate CVEs require manual validation and are not counted as confirmed findings.",
             "Excluded issues (false-positive / accepted-risk / verified) are retained here with totals.",
             "A clean result only means 'not observed' where coverage shows the family was ASSESSED.",
+            "Session evidence distinguishes demonstrated effect, session state, transcript gaps and recovery incidents.",
         ],
     }
 

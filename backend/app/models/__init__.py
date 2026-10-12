@@ -813,6 +813,31 @@ class InteractionRecord(Base):
     __table_args__ = (UniqueConstraint("session_id", "request_id", name="uq_interaction_request"),)
 
 
+class SessionEvidence(Base):
+    """Bounded, nonce-correlated session evidence (PRD v2 §22.6, Phase 21).
+
+    A session opening, a command returning output, and a declared proof
+    succeeding are SEPARATE evidence events — observing an identity never proves
+    additional access or that a proof effect was demonstrated. Each record names
+    the exact event range, actor, evaluator, effect claim and limitations."""
+
+    __tablename__ = "session_evidence"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_sessions.id"),
+                                            nullable=False, index=True)
+    # SESSION_OPENED | COMMAND_OUTPUT | PROOF_EFFECT
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    seq_start: Mapped[int | None] = mapped_column(Integer)
+    seq_end: Mapped[int | None] = mapped_column(Integer)
+    actor: Mapped[str] = mapped_column(String(128), default="")
+    evaluator: Mapped[str] = mapped_column(String(64), default="")
+    effect_claim: Mapped[str] = mapped_column(String(256), default="")
+    limitations: Mapped[str] = mapped_column(String(256), default="")
+    demonstrated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

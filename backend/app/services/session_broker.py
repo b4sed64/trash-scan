@@ -168,3 +168,41 @@ def quarantine(db: DbSession, session: LabSession, reason: str) -> None:
     session.state = QUARANTINED
     session.quarantine_reason = reason[:256]
     release_lease(db, session)
+
+
+def absolute_expired(session: LabSession, now: dt.datetime | None = None) -> bool:
+    now = now or _now()
+    exp = _aware(session.expires_at)
+    return bool(exp and now > exp)
+
+
+def idle_expired(session: LabSession, last_activity: dt.datetime | None,
+                 idle_seconds: int, now: dt.datetime | None = None) -> bool:
+    now = now or _now()
+    last = _aware(last_activity)
+    return bool(last and (now - last).total_seconds() > idle_seconds)
+
+
+def reconcile_sessions(db: DbSession) -> int:
+    """On backend/framework restart, reconcile lingering sessions. A session past
+    its absolute lifetime, or whose parent attempt is already terminal, is marked
+    LOST and its controller lease released. The FIXTURE lock is NOT released here
+    — missing process state is not evidence of a clean target; the lock is held
+    until recovery readiness is verified (§21.6)."""
+    from ..models import ProofAttempt
+    live = db.execute(
+        select(LabSession).where(LabSession.state.in_(
+            (ESTABLISHED_UNVERIFIED, READY, CONTROLLED, STOPPING)))
+    ).scalars().all()
+    n = 0
+    for s in live:
+        attempt = db.get(ProofAttempt, s.attempt_id)
+        terminal_attempt = attempt is None or attempt.state in (
+            "COMPLETED", "FAILED", "BLOCKED", "TIMED_OUT", "CANCELLED")
+        if absolute_expired(s) or terminal_attempt:
+            s.state = LOST
+            s.quarantine_reason = "reconciled on restart (lifetime elapsed or attempt terminal)"
+            release_lease(db, s)
+            n += 1
+    db.flush()
+    return n

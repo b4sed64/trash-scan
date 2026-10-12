@@ -319,6 +319,13 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   budget), records an `InteractionRecord`, is idempotent on a client request id,
   and leaves OUTCOME_UNKNOWN (never auto-resent) on a simulated timeout. Fake-
   backed, gated off.
+- **Session evidence & recovery (`services/session_evidence.py`, PRD v2 §22.6/Phase 21).**
+  SESSION_OPENED / COMMAND_OUTPUT / PROOF_EFFECT are separate evidence events;
+  only PROOF_EFFECT can be `demonstrated`. `session_report` keeps demonstrated
+  effect, session state, transcript gaps and recovery incidents distinct;
+  `reconcile_sessions` marks orphaned/expired sessions LOST on restart but never
+  releases the fixture lock before recovery readiness. The JSON export carries a
+  session summary.
 
 ---
 

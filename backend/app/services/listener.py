@@ -102,6 +102,11 @@ def establish(db: DbSession, *, attempt: ProofAttempt, grant: SessionGrant, fixt
     broker.verify(db, sess, fixture_association_ok=(callback.source_ip == expected_source_ip))
     if sess.state == broker.READY:
         attempt.state = "SESSION_ACTIVE"
+        from . import session_evidence
+        session_evidence.capture(db, sess.id, session_evidence.SESSION_OPENED,
+                                 evaluator="listener",
+                                 effect_claim="session established and fixture-associated",
+                                 limitations="session establishment does not prove any impact claim")
     db.flush()
     return sess
 

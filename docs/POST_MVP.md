@@ -21,8 +21,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0016_stream_events` | `stream_events` — durable, ordered status/output/evidence events for the live execution workspace (PRD v2 Phase 17). Fake streams; sanitized output. See "Live execution workspace" below. |
 | `0017_session_domain` | `session_grants` / `lab_sessions` / `controller_leases` — session identity, grants and single-writer leases (PRD v2 Phase 18). Fake-only; sessions disabled against real targets. See "Session domain" below. |
 | `0018_interaction_records` | `interaction_records` — guided-action interaction lifecycle (PRD v2 Phase 20). Predefined actions only; fake-backed and gated off. See "Guided session actions" below. |
+| `0019_session_evidence` | `session_evidence` — separated session evidence events + recovery reporting (PRD v2 Phase 21). See "Session evidence & recovery" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0018_interaction_records`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0019_session_evidence`.
 
 ## One scan, many targets, manual start
 
@@ -398,6 +399,33 @@ declare which protocol it's for.
   picker already works (`compose()` is now a shared helper both call).
 - The TCP ports picker on the Scans page now filters `port_sets` to `protocol !== "UDP"`, so
   a UDP profile can never accidentally end up in the TCP `-p` argument.
+
+## Session evidence & recovery (PRD v2 Phase 21)
+
+Session transcripts, evidence and recovery reporting (`services/session_evidence.py`,
+`session_evidence` via migration `0019`), on the Phase 17 transcript and Phase 16
+proof-evidence infra.
+
+- **Three evidence kinds stay separate** — `SESSION_OPENED`, `COMMAND_OUTPUT`,
+  `PROOF_EFFECT`. Only a `PROOF_EFFECT` may be `demonstrated`; `capture()` forces
+  `demonstrated=False` for the other two, so observing an identity or getting
+  command output never masquerades as a demonstrated proof. Each record names the
+  event range, actor, evaluator, effect claim and limitations. Establishment
+  records a SESSION_OPENED event; a completed guided action records a
+  COMMAND_OUTPUT event.
+- **`session_report()`** keeps the dimensions apart: demonstrated-effect vs.
+  session state vs. transcript-gap count vs. recovery incidents.
+- **Expiry + reconciliation** (`session_broker`): absolute-lifetime and idle
+  expiry helpers, and `reconcile_sessions()` which, on restart, marks an orphaned
+  or lifetime-elapsed session `LOST` and releases its controller lease — but
+  **never releases the fixture lock** (missing process state is not evidence of a
+  clean target; the lock is held until recovery readiness is verified).
+- **Exports:** `GET /api/targets/{id}/report.json` now carries a `sessions`
+  section distinguishing demonstrated effect, session state, transcript gaps and
+  recovery incidents.
+
+Remaining: the session-timeline UI, and the optional administrator terminal
+(Phase 22).
 
 ## Guided session actions (PRD v2 Phase 20 — predefined, fake-backed)
 
@@ -836,7 +864,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **286 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **290 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -872,7 +900,10 @@ establish refused when sessions disabled or the listener interface is bad, and
 terminate removes both listener and session; Phase 20 added `test_guided.py` —
 in-grant action completes, out-of-grant/unknown rejected, dispatch requires a
 valid lease, required-param validation, idempotent request_id, unknown-outcome
-not auto-resent, per-session budget, and terminate closing the session).
+not auto-resent, per-session budget, and terminate closing the session; Phase 21
+added `test_session_evidence.py` — only PROOF_EFFECT can be demonstrated, the
+session report separates demonstrated/state/gaps/recovery, absolute+idle expiry,
+and reconciliation marking an orphan LOST without releasing the fixture lock).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

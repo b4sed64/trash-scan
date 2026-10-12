@@ -155,6 +155,12 @@ def dispatch(db: DbSession, *, session: LabSession, grant: SessionGrant, action_
         session.state = broker.CLOSED
         broker.release_lease(db, session)
     stream.append_output(db, _attempt_of(session), f"[{action_id}] {rec.output}")
+    # A command returning output is its own evidence event — never a proof effect.
+    from . import session_evidence
+    session_evidence.capture(db, session.id, session_evidence.COMMAND_OUTPUT,
+                             actor=request_id, evaluator=f"guided:{action_id}",
+                             effect_claim=action.get("effect", "")[:256],
+                             limitations="output is evidence for this operation only")
     db.flush()
     return rec
 

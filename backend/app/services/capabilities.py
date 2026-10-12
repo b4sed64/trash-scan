@@ -52,12 +52,16 @@ def _capabilities(s: Settings) -> list[dict]:
         },
         {
             "key": "lab_proof",
-            "title": "One-Shot Proof Execution",
+            "title": "One-Shot Proof / Exploitation",
             "flag": "enable_lab_proof",
             "enabled": s.enable_lab_proof,
-            "backing": FAKE,
-            "real_lab_gate": "Controlled one-shot proof against a registered, "
-                             "isolated lab fixture with recovery verified.",
+            # A real Metasploit backend exists (Phase 24); it is live only when
+            # framework_mode=real, otherwise the fake drives the lifecycle.
+            "backing": REAL if s.framework_mode == "real" else FAKE,
+            "framework_mode": s.framework_mode,
+            "real_lab_gate": "Controlled one-shot proof/exploit against a "
+                             "registered, isolated lab fixture with recovery "
+                             "verified; msfrpcd reachable for framework_mode=real.",
         },
         {
             "key": "guided_sessions",
@@ -113,6 +117,7 @@ def support_matrix(s: Settings | None = None) -> dict:
     caps = _capabilities(s)
     return {
         "release": "1.0.0",
+        "framework_mode": s.framework_mode,
         "data_provenance": data_provenance(s),
         "capabilities": caps,
         "disabled_optional_modes": [c["key"] for c in caps if not c["enabled"]],

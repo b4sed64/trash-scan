@@ -31,12 +31,19 @@ from ..models import (
     ProofAttempt,
     ProofEvidence,
     ProofPlan,
+    Target,
 )
 from . import lab
 from . import stream
 from .audit_service import AuditService
 from .exploitability import list_modules
-from .framework import CheckJob, VULNERABLE, get_framework_adapter, interpret_native_result
+from .framework import (
+    CheckJob,
+    ExploitJob,
+    VULNERABLE,
+    get_framework_adapter,
+    interpret_native_result,
+)
 
 PROOF_ATTESTATION = (
     "I confirm this proof runs only against an isolated, recoverable lab fixture "
@@ -169,6 +176,36 @@ def _evaluate(native, marker: str) -> tuple[str, bool, bool]:
     return ATTEMPTED_NOT_DEMONSTRATED, False, negative_control_passed
 
 
+def _run_exploit(db: Session, adapter, plan: ProofPlan, attempt: ProofAttempt,
+                 module: dict) -> tuple[str, bool, str]:
+    """Exploit-class execution (PRD v2 Phase 24): run the admitted exploit against
+    the resolved fixture address, and — if a session opens — run ONE benign marker
+    command to prove code execution, then stop the session. DEMONSTRATED only when
+    the per-attempt marker is echoed back by the session; a session that never
+    opens (e.g. a patched target) is ATTEMPTED_NOT_DEMONSTRATED, never an error."""
+    fixture = db.get(LabFixture, plan.fixture_id)
+    tgt = db.get(Target, fixture.target_id) if fixture else None
+    address = tgt.value if tgt else (fixture.target_id if fixture else "")
+    marker = plan.proof_marker
+    session = adapter.run_exploit(ExploitJob(
+        module_id=plan.module_id, target=address, options=plan.options or {},
+        payload=module.get("payload", ""), marker=marker, idempotency_key=attempt.id))
+    if not session.opened or not session.session_id:
+        stream.append_output(db, attempt.id, "no session opened (target not vulnerable or patched)")
+        return ATTEMPTED_NOT_DEMONSTRATED, False, "no session opened"
+    try:
+        raw = adapter.session_run(session.session_id, f"echo {marker}", timeout_s=15)
+    finally:
+        adapter.session_stop(session.session_id)
+    echoed = bool(marker) and marker in (raw or "")
+    safe = stream.sanitize_output(raw or "")
+    stream.append_output(db, attempt.id, f"session marker command output: {safe}")
+    outcome = DEMONSTRATED if echoed else ATTEMPTED_NOT_DEMONSTRATED
+    summary = ("exploit opened a session; marker echoed — code execution demonstrated"
+               if echoed else "exploit opened a session but marker not echoed")
+    return outcome, echoed, summary
+
+
 def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
     """One-shot execution. Creates exactly one ProofAttempt; resolves to BLOCKED
     (without running anything) if any gate fails. Never retries."""
@@ -202,18 +239,30 @@ def execute(db: Session, plan: ProofPlan) -> ProofAttempt:
     stream.append_status(db, attempt.id, "RUNNING")
     started = _now()
     adapter = _framework()
+    module = _module(plan.module_id) or {}
     try:
-        job_id = adapter.start_check(CheckJob(module_id=plan.module_id, target=fixture.target_id,
-                                              options=plan.options, idempotency_key=attempt.id))
-        native = adapter.job_result(job_id)
-        proof_outcome, demonstrated, neg = _evaluate(native, plan.proof_marker)
-        summary = f"native={native.native_code}; marker_echoed={demonstrated}"
-        db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker,
-                             demonstrated=demonstrated, native_code=native.native_code,
-                             negative_control_passed=neg, redacted_summary=summary))
-        attempt.proof_outcome = proof_outcome
-        stream.append_output(db, attempt.id, f"check returned: {native.native_code}")
-        stream.append_evidence(db, attempt.id, summary)
+        if module.get("operation") == "exploit":
+            # Phase 24 exploitation path: run the exploit, prove code execution
+            # via a benign marker command in the opened session, then stop it.
+            proof_outcome, demonstrated, summary = _run_exploit(db, adapter, plan, attempt, module)
+            db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker,
+                                 demonstrated=demonstrated, native_code="SESSION",
+                                 negative_control_passed=False, redacted_summary=summary))
+            attempt.proof_outcome = proof_outcome
+            stream.append_evidence(db, attempt.id, summary)
+        else:
+            job_id = adapter.start_check(CheckJob(module_id=plan.module_id,
+                                                  target=fixture.target_id,
+                                                  options=plan.options, idempotency_key=attempt.id))
+            native = adapter.job_result(job_id)
+            proof_outcome, demonstrated, neg = _evaluate(native, plan.proof_marker)
+            summary = f"native={native.native_code}; marker_echoed={demonstrated}"
+            db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker,
+                                 demonstrated=demonstrated, native_code=native.native_code,
+                                 negative_control_passed=neg, redacted_summary=summary))
+            attempt.proof_outcome = proof_outcome
+            stream.append_output(db, attempt.id, f"check returned: {native.native_code}")
+            stream.append_evidence(db, attempt.id, summary)
     except Exception as exc:  # noqa: BLE001 - a module/runner failure is ERROR, not a crash
         attempt.proof_outcome = ERROR
         db.add(ProofEvidence(attempt_id=attempt.id, marker=plan.proof_marker, demonstrated=False,

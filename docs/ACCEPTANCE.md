@@ -1,7 +1,7 @@
 # MVP acceptance criteria (PRD §24)
 
 Each criterion mapped to where it is implemented and demonstrated. "Test" refers to
-`backend/tests/`; run the full suite (306 tests) with `docker run --rm trashscan-api pytest`.
+`backend/tests/`; run the full suite (313 tests) with `docker run --rm trashscan-api pytest`.
 Post-MVP refinements are in [`POST_MVP.md`](POST_MVP.md) and do not change any verdict below.
 
 | # | Criterion | Status | Evidence |
@@ -52,7 +52,7 @@ real findings.
 | Authorized scanning | on (core) | real adapters; **synthetic in fake mode** | Authorized scan of the supported lab with real adapters; verify coverage + patched negatives |
 | Exploitability assessment | `enable_exploitability_assessment` = **on** | offline/analytical | None — no target contact, no execution |
 | Active lab prerequisite checks | `enable_lab_checks` = **off** | fake | Active checks against a proven-isolated surface, own plan/attestation/approval |
-| One-shot proof execution | `enable_lab_proof` = **off** | fake | Controlled one-shot proof on a registered, isolated fixture with recovery verified |
+| One-shot proof / exploitation | `enable_lab_proof` = **off** | fake by default; **real** (Metasploit/`msfrpcd`) when `framework_mode=real` | Controlled one-shot exploit on a registered, isolated fixture with recovery verified; live run against the lab still pending |
 | Verified sessions & guided actions | `enable_guided_sessions` = **off** | fake | Internal listener on a proven-isolated topology, verified session, predefined actions |
 | Administrator target-session terminal | `enable_lab_terminal` = **off** | fake | Real command-output channel on an admitted, verified session within a granted time |
 | External OSINT enrichment | `enable_external_osint` = **off** | real | None — opt-in external lookups |
@@ -82,3 +82,26 @@ modes remain fake-backed and disabled.
 **Handoff:** enabled modes (offline assessment, scanning) have test evidence;
 disabled optional modes are documented above with their gates. No claim of broad
 vulnerability absence or universal exploitability is made.
+
+## PRD v2 Phase 24 — reviewed capability growth (work unit 1: vsftpd)
+
+The framework surface was **widened by explicit administrator decision** to add
+authorized isolated-lab exploitation: `run_exploit` / `session_run` /
+`session_stop`, served live by `RealMetasploitAdapter` (`msfrpcd`) only when
+`framework_mode=real`. The first admitted module is
+`exploit/unix/ftp/vsftpd_234_backdoor`.
+
+- **Fake-backed path is tested** (`test_exploit.py`): an exploit that opens a
+  session and echoes the per-attempt marker is DEMONSTRATED; a patched/
+  non-vulnerable target (the negative control) opens no session and is
+  ATTEMPTED_NOT_DEMONSTRATED; the flag-off gate still BLOCKS; the session is
+  always stopped; the real backend is selected only by `framework_mode=real` and
+  refuses to run without a password; the capability matrix reports `lab_proof`
+  backing per `framework_mode`.
+- **Still gated:** live execution requires `framework_mode=real` +
+  `enable_lab_proof` + verified isolation + a registered fixture, plus the proof
+  plan/attestation/approval.
+- **Real-lab gate (not yet satisfied):** a live run against the isolated vsftpd
+  2.3.4 fixture — exploit → session → benign marker command proving code
+  execution → stop/restore — and the patched-control negative. This has **not**
+  been run from this environment; CI only exercises the fake backend.

@@ -3,6 +3,44 @@
   "_comment": "Sample reviewed proof-module manifests (PRD v2 §21.3). RESEARCH_ONLY entries are visible references, never executable. ADMITTED entries may be ASSESSED offline; execution is gated separately by TRASHSCAN_ENABLE_LAB_* flags, a distinct proof plan + attestation + fresh administrator approval, and real-lab/recovery gates (Phases 15-16). Shipping a manifest is NOT admission of executable modules for a real engagement — a human admits actual module revisions with their effect/recovery contracts. No module here performs any action in Phase 13.",
   "modules": [
     {
+      "module_id": "exploit/unix/ftp/vsftpd_234_backdoor",
+      "admission_state": "ADMITTED",
+      "operation": "exploit",
+      "source": "metasploit-framework",
+      "source_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "framework": "metasploit",
+      "payload": "cmd/unix/interact",
+      "dependency_digests": {},
+      "reviewer": "lab-operator",
+      "review_date": "2026-10-12",
+      "issue_types": ["service:vsftpd-2.3.4", "nmap:vsftpd-234-backdoor"],
+      "claim": "Demonstrates command execution on an isolated lab host by triggering the vsftpd 2.3.4 backdoor (bind shell on 6200/tcp) and running one benign marker command, then stopping the session.",
+      "compatible": {"product": "vsftpd", "version": "2.3.4", "service": "ftp", "protocol": "tcp", "port": 21},
+      "check_classification": "exploit-session",
+      "prerequisites": [
+        {"key": "reachable_service", "kind": "service_reachable",
+         "params": {"protocol": "tcp", "port": 21}, "description": "vsftpd reachable on 21/tcp"},
+        {"key": "version_banner", "kind": "version_evidence",
+         "params": {"product": "vsftpd", "version": "2.3.4"}, "description": "Banner indicates vsftpd 2.3.4"},
+        {"key": "lab_fixture_registered", "kind": "lab_fixture",
+         "description": "Target bound to a registered, isolated lab fixture (Phase 15)"},
+        {"key": "snapshot_ready", "kind": "snapshot",
+         "description": "Recoverable snapshot / restore readiness verified (Phase 15)"}
+      ],
+      "typed_inputs": {
+        "marker": {"type": "string", "required": true, "max_length": 64}
+      },
+      "admitted_effect": "Opens the backdoor bind shell on 6200/tcp and runs ONE benign marker command (echo <nonce>) to prove code execution; no persistence, no file writes, no credential access; stops the session on completion.",
+      "expected_effect": "A single bounded exploit run; one marker command; session stopped; snapshot restore on completion.",
+      "negative_control": "A patched vsftpd (not 2.3.4) MUST NOT yield a session; run against the patched control host to confirm the result is not a false positive.",
+      "max_requests": 1,
+      "runtime_ceiling_seconds": 60,
+      "measured_limits": {"proof_seconds": 60, "session_commands": 1},
+      "lab_fixture": "vsftpd-234-fixture",
+      "cleanup": "stop session; no files written",
+      "recovery": "snapshot restore"
+    },
+    {
       "module_id": "sample/http-exposed-config-read",
       "admission_state": "ADMITTED",
       "source": "trash-scan-reviewed",

@@ -330,7 +330,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**306 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**313 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
@@ -384,16 +384,29 @@ run **Logs → Verify chain now** — it must report "Chain intact".
 
 ## Safety boundary
 
-Trash Scan performs passive discovery and authorized active reconnaissance only. It does
-**not** exploit vulnerabilities, test or spray credentials, brute-force names, cause denial
-of service, or provide detection-evasion controls. Scope, authorization and the audit trail
-are product behaviour, not add-ons. The operator remains responsible for holding written
-permission for every target and lab segment.
+By default Trash Scan performs passive discovery and authorized active reconnaissance only. In
+its default configuration it does **not** exploit vulnerabilities, test or spray credentials,
+brute-force names, cause denial of service, or provide detection-evasion controls. Scope,
+authorization and the audit trail are product behaviour, not add-ons. The operator remains
+responsible for holding written permission for every target and lab segment.
+
+Exploitation is an **explicitly opt-in, gated** capability (below), intended only for an
+authorized, isolated lab; it is off unless a deployment turns on the feature flag, the real
+framework backend, verified isolation and a registered fixture. Credential spraying,
+brute-force, DoS and evasion remain out of scope entirely.
 
 The PRD v2 exploitability/proof/session capabilities (lab checks, one-shot proof, verified
-sessions, administrator terminal) are **fake-backed and disabled by default**; each is behind
-its own feature flag plus a plan/attestation/approval and real-lab/recovery gate, and none can
-contact or affect a real target in this build. Only the offline exploitability assessment is on
-by default. `GET /api/capabilities` publishes the authoritative, config-derived support matrix
-(and flags synthetic scan data); see [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) for the matrix
-and the real-lab gates.
+sessions, administrator terminal) are **disabled by default**; each is behind its own feature
+flag plus a plan/attestation/approval and real-lab/recovery gate. Only the offline
+exploitability assessment is on by default.
+
+As of Phase 24 the one-shot proof path has a **real exploitation backend** (Metasploit via
+`msfrpcd`) for authorized, isolated-lab use: with `TRASHSCAN_FRAMEWORK_MODE=real` **and**
+`enable_lab_proof` on **and** verified lab isolation **and** a registered fixture, an approved
+plan actually runs the admitted exploit against the lab fixture, proves code execution with one
+benign marker command, then stops the session and restores. With the default
+`framework_mode=fake` nothing executes. The operator is responsible for holding written
+permission for every target and keeping the lab segment isolated. `GET /api/capabilities`
+publishes the authoritative, config-derived support matrix (including the active
+`framework_mode` and whether scan data is synthetic); see
+[`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md) for the matrix and the real-lab gates.

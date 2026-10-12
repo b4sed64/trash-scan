@@ -126,6 +126,18 @@ class Settings(BaseSettings):
     # Assessment evidence older than this many hours is treated as STALE.
     exploitability_evidence_stale_hours: int = 168
 
+    # Framework (Metasploit) execution backend (PRD v2 Phase 24) ------------
+    # "fake" = the metadata/stub adapter used for all offline development and
+    # tests (nothing executes). "real" = talk to msfrpcd for actual exploitation
+    # of an authorized, isolated lab fixture. Real mode is additionally gated by
+    # enable_lab_proof, verified lab isolation and a registered fixture — the
+    # mode alone never runs anything. Set these in .env before a live run.
+    framework_mode: str = "fake"
+    msf_rpc_host: str = "host.docker.internal"
+    msf_rpc_port: int = 55553
+    msf_rpc_password: str = ""
+    msf_rpc_ssl: bool = False
+
     def resolver_list(self) -> list[str]:
         return [r.strip() for r in self.dns_resolvers.split(",") if r.strip()]
 

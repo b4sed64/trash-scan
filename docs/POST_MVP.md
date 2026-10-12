@@ -427,6 +427,33 @@ proof-evidence infra.
 
 Remaining: the session-timeline UI.
 
+## Reviewed capability growth — authorized exploitation (PRD v2 Phase 24, WU1)
+
+The framework adapter surface — deliberately **check-only** through Phases 14–23
+— was widened by explicit administrator decision to support authorized,
+isolated-lab exploitation. No new schema (head stays `0020_terminal`).
+
+- **Widened surface** (`services/framework.py`): `run_exploit`, `session_run`,
+  `session_stop` alongside the existing check ops. Still no generic
+  console/datastore/module-load passthrough — only these enumerated operations.
+- **Real backend**: `RealMetasploitAdapter` talks to `msfrpcd` via
+  `pymetasploit3` (lazy-imported, real-mode only) and is selected by
+  `framework_mode=real`; the default `fake` adapter drives all offline dev/tests.
+  Connection options live in `.env` (`FRAMEWORK_MODE`, `MSF_RPC_HOST/PORT/
+  PASSWORD/SSL`); real mode refuses to run with a blank password.
+- **First admitted module**: `exploit/unix/ftp/vsftpd_234_backdoor` in
+  `proof_modules.json` with `operation: exploit`, a payload, a benign proof
+  marker and a required negative control (patched vsftpd ⇒ no session).
+- **Execution path** (`services/proof.py`): for an EXPLOIT-class module the
+  one-shot lifecycle runs the exploit, and if a session opens runs ONE benign
+  marker command to prove code execution, then stops the session and recovers.
+  DEMONSTRATED only when the per-attempt marker is echoed; a target that opens no
+  session is ATTEMPTED_NOT_DEMONSTRATED. All existing gates
+  (`enable_lab_proof` + verified isolation + registered fixture + plan/approval)
+  still hold — the mode alone runs nothing.
+- **Tested fake-backed** (`test_exploit.py`); the live lab run is a real-lab gate
+  (see `docs/ACCEPTANCE.md`), not exercised from CI.
+
 ## Integrated release acceptance (PRD v2 Phase 23)
 
 A consolidation/verification phase — no new schema (head stays `0020_terminal`).
@@ -914,7 +941,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **306 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **313 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -961,7 +988,12 @@ frame is rejected but recorded, a duplicate request_id never replays, and
 `test_release_acceptance.py` — exploitation/session flags default off, the
 capability matrix mirrors flags (never a result) and keeps fake-backed modes
 fake even when enabled, synthetic scan data is labelled in the provenance block
-and the report export, and the matrix is published only to authenticated users).
+and the report export, and the matrix is published only to authenticated users;
+Phase 24 added `test_exploit.py` — the widened exploitation path, fake-backed: a
+session + echoed marker is DEMONSTRATED, a patched target (no session) is the
+negative control, the flag-off gate still BLOCKS, the session is always stopped,
+the real msfrpcd backend is selected only by framework_mode=real and refuses a
+blank password, and the capability matrix reports lab_proof backing per mode).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

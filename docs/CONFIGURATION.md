@@ -172,22 +172,41 @@ manual validation.
 |---|---|---|
 | `TRASHSCAN_ENABLE_EXPLOITABILITY_ASSESSMENT` | `true` | Offline, analytical issue→module assessment after a scan. No target contact, no execution. |
 | `TRASHSCAN_ENABLE_LAB_CHECKS` | `false` | (Future) active prerequisite checks against a lab surface. Off; requires its own plan/attestation/approval. |
-| `TRASHSCAN_ENABLE_LAB_PROOF` | `false` | (Future) controlled one-shot proof against a registered lab fixture. Off; requires proof plan + approval + lab/recovery gates. |
+| `TRASHSCAN_ENABLE_LAB_PROOF` | `false` | Controlled one-shot proof/exploit against a registered lab fixture. Off; requires proof plan + approval + lab/recovery gates **and** `FRAMEWORK_MODE=real` for live execution (see below). |
 | `TRASHSCAN_ENABLE_GUIDED_SESSIONS` | `false` | (Future) guided session operations. Off. |
 | `TRASHSCAN_ENABLE_LAB_TERMINAL` | `false` | Optional administrator target-session terminal (fake channel). Off; endpoints 404 while off. Requires a terminal grant + exact attestation + controller lease + verified session; bounded 4 KiB frames; command-output only, no PTY/exec. |
 | `TRASHSCAN_PROOF_MODULES_PATH` | `/app/app/data/proof_modules.json` | Reviewed module manifest file. A sanitized sample ships; RESEARCH_ONLY entries are never executable. |
 
-**A feature flag alone never approves a job.** Only offline assessment is enabled;
-every active capability is off by default and, when later implemented, additionally
-requires a separate plan, typed attestation, a fresh administrator approval, and
-real-lab/recovery gates. In this release nothing in this section performs any active
-operation — assessment is purely analytical.
+**A feature flag alone never approves a job.** Every active capability is off by
+default and additionally requires a separate plan, typed attestation, a fresh
+administrator approval, and real-lab/recovery gates. By default only the offline
+assessment is enabled and nothing in this section contacts or affects a target.
 
-The authoritative, runtime view of these defaults is published at
+### Framework (Metasploit) execution backend (PRD v2 Phase 24)
+
+The one-shot proof path can drive a **real** Metasploit backend for authorized,
+isolated-lab exploitation. Set these in `.env`.
+
+| Variable | Default | Notes |
+|---|---|---|
+| `TRASHSCAN_FRAMEWORK_MODE` | `fake` | `fake` = metadata/stub adapter, nothing executes (all offline dev/tests). `real` = talk to `msfrpcd` and actually exploit the lab fixture. Real execution ALSO requires `enable_lab_proof`, verified isolation and a registered fixture — the mode alone runs nothing. |
+| `TRASHSCAN_MSF_RPC_HOST` | `host.docker.internal` | Where `msfrpcd` listens. The worker reaches the host (which sits on the lab segment). |
+| `TRASHSCAN_MSF_RPC_PORT` | `55553` | `msfrpcd` RPC port. |
+| `TRASHSCAN_MSF_RPC_PASSWORD` | _(empty)_ | RPC password; real mode refuses to run while blank. |
+| `TRASHSCAN_MSF_RPC_SSL` | `false` | Whether `msfrpcd` uses TLS. |
+
+Start the daemon on the host: `msfrpcd -P <password> -S -a 127.0.0.1`. The admitted
+exploit modules live in the proof-module manifest (e.g.
+`exploit/unix/ftp/vsftpd_234_backdoor`), each with an `operation`, a `payload`, a
+benign proof marker and a required negative control. There is no generic
+console/datastore/module-load passthrough — only the enumerated
+exploit/session operations.
+
+The authoritative, runtime view of all of this is published at
 `GET /api/capabilities` (authenticated). It is computed from the flags above and
 fixed build facts only — never from a scan/proof result — so no mode is ever
 reported enabled because a (fake) result looked successful. It also reports the
-active scanner mode and whether scan data is `synthetic` (fake mode).
+active `framework_mode`, the scanner mode, and whether scan data is `synthetic`.
 
 ---
 

@@ -23,6 +23,10 @@ cssselect2==0.7.0
 pyphen==0.17.2
 fonttools==4.55.3
 
+# Metasploit RPC client — used ONLY when framework_mode=real (authorized
+# isolated-lab exploitation, PRD v2 Phase 24); lazy-imported, never at rest.
+pymetasploit3==1.0.3
+
 # Test / dev tooling
 pytest==8.3.4
 httpx==0.28.1

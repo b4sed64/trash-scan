@@ -45,6 +45,15 @@ services:
       TRASHSCAN_ALLOW_RAW_PACKET: "false"
       TRASHSCAN_ENABLE_EXTERNAL_OSINT: "${ENABLE_EXTERNAL_OSINT:-false}"
       TRASHSCAN_RUN_SEED: "${RUN_SEED:-0}"
+      # Metasploit framework backend (PRD v2 Phase 24). "fake" = metadata/stub
+      # adapter (default, nothing executes). "real" = live msfrpcd for authorized
+      # isolated-lab exploitation; also requires enable_lab_proof + verified
+      # isolation + a registered fixture. Set the real values in .env.
+      TRASHSCAN_FRAMEWORK_MODE: "${FRAMEWORK_MODE:-fake}"
+      TRASHSCAN_MSF_RPC_HOST: "${MSF_RPC_HOST:-host.docker.internal}"
+      TRASHSCAN_MSF_RPC_PORT: "${MSF_RPC_PORT:-55553}"
+      TRASHSCAN_MSF_RPC_PASSWORD: "${MSF_RPC_PASSWORD:-}"
+      TRASHSCAN_MSF_RPC_SSL: "${MSF_RPC_SSL:-false}"
     depends_on:
       db:
         condition: service_healthy
@@ -52,6 +61,8 @@ services:
         condition: service_healthy
     volumes:
       - artifacts:/app/artifacts
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     healthcheck:
@@ -69,6 +80,9 @@ services:
         condition: service_healthy
     volumes:
       - artifacts:/app/artifacts
+    # The worker reaches msfrpcd on the host (which sits on the lab segment).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   beat:
     build: ./backend

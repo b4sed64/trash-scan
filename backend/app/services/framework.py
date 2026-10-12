@@ -7,11 +7,17 @@ RPC, console passthrough, arbitrary datastore options, payload generation,
 module loading, resource scripts, or local-shell fallback. Those are not
 "missing features" to add later; their absence is the contract.
 
-In this phase the backend is a **fake** with sanitized native-response fixtures.
-No real framework is contacted and nothing executes against a target. A real
-adapter (private, authenticated RPC reachable only inside the restricted worker
-boundary) is introduced later and remains withheld until the Phase 15 lab
-isolation/recovery gates pass — a state-changing operation never runs before then.
+The default backend is a **fake** with sanitized native-response fixtures: no
+real framework is contacted and nothing executes. It is the only backend used
+offline and in tests.
+
+PRD v2 Phase 24 **widens this surface, by explicit administrator decision**, to
+add authorized exploitation against an isolated lab: ``run_exploit`` /
+``session_run`` / ``session_stop``, served by ``RealMetasploitAdapter`` (private
+``msfrpcd`` RPC) when ``framework_mode=real``. This is the capability the earlier
+phases deliberately withheld; it is additionally gated by ``enable_lab_proof``,
+verified lab isolation and a registered fixture — the mode alone runs nothing —
+and there is still no generic console/datastore/module-load passthrough.
 
 ``interpret_native_result`` encodes the conservative §21.4 mapping so a framework
 verdict is never over-read: only ``Vulnerable`` maps to reviewed *condition*
@@ -88,6 +94,30 @@ class NativeResult:
     check_completed: bool = False
 
 
+@dataclass(frozen=True)
+class ExploitJob:
+    """A single, bounded exploit run against a pre-resolved in-scope lab fixture
+    (PRD v2 Phase 24). ``marker`` is the benign token a follow-up command echoes
+    to prove code execution; ``payload`` names the one admitted payload."""
+    module_id: str
+    target: str            # resolved lab fixture address (RHOSTS)
+    options: dict = field(default_factory=dict)
+    payload: str = ""
+    marker: str = ""
+    idempotency_key: str = ""
+
+
+@dataclass(frozen=True)
+class ExploitSession:
+    """The outcome of an exploit run: whether a session opened, and its id. A
+    closed/absent session (``opened=False``) is the expected result against a
+    patched or non-vulnerable target."""
+    session_id: str | None
+    opened: bool
+    module_id: str
+    native: dict = field(default_factory=dict)
+
+
 @runtime_checkable
 class FrameworkAdapter(Protocol):
     """The entire permitted surface. Note the absence of any exploit/console/
@@ -99,6 +129,10 @@ class FrameworkAdapter(Protocol):
     def job_status(self, job_id: str) -> JobStatus: ...
     def job_result(self, job_id: str) -> NativeResult: ...
     def cancel(self, job_id: str) -> None: ...
+    # Phase 24 exploitation surface (gated; see module docstring).
+    def run_exploit(self, job: ExploitJob) -> ExploitSession: ...
+    def session_run(self, session_id: str, command: str, timeout_s: int = 15) -> str: ...
+    def session_stop(self, session_id: str) -> None: ...
 
 
 def interpret_native_result(result: NativeResult) -> dict:
@@ -137,13 +171,17 @@ class FakeFrameworkAdapter:
     for all development and tests; contacts no real framework and no target."""
 
     def __init__(self, fixtures: dict[str, NativeResult] | None = None,
-                 version: str = "fake-msf/0.0.0"):
+                 version: str = "fake-msf/0.0.0",
+                 exploitable: dict[str, bool] | None = None):
         # module_id -> the native result a check would (fictionally) return
         self._fixtures = fixtures or {}
         self._version = version
+        # module_id -> whether an exploit run (fictionally) opens a session.
+        self._exploitable = exploitable or {}
         self._jobs: dict[str, NativeResult] = {}
         self._status: dict[str, str] = {}
         self._by_key: dict[str, str] = {}
+        self._sessions: dict[str, bool] = {}   # session_id -> open?
         self._seq = 0
 
     def capabilities(self) -> FrameworkCapabilities:
@@ -190,9 +228,113 @@ class FakeFrameworkAdapter:
         if job_id in self._status:
             self._status[job_id] = "FAILED"
 
+    # --- Phase 24 exploitation surface (fake) ------------------------------
+
+    def run_exploit(self, job: ExploitJob) -> ExploitSession:
+        """Fictionally run an exploit. Opens a session only when the module is
+        marked exploitable in the fixtures; against anything else (e.g. a patched
+        target) no session opens — the expected negative-control outcome."""
+        if job.idempotency_key and job.idempotency_key in self._by_key:
+            sid = self._by_key[job.idempotency_key]
+            return ExploitSession(session_id=sid, opened=self._sessions.get(sid, False),
+                                  module_id=job.module_id)
+        if not self._exploitable.get(job.module_id, False):
+            return ExploitSession(session_id=None, opened=False, module_id=job.module_id,
+                                  native={"note": "no session (target not vulnerable or patched)"})
+        self._seq += 1
+        sid = f"sess-{self._seq}"
+        self._sessions[sid] = True
+        if job.idempotency_key:
+            self._by_key[job.idempotency_key] = sid
+        return ExploitSession(session_id=sid, opened=True, module_id=job.module_id)
+
+    def session_run(self, session_id: str, command: str, timeout_s: int = 15) -> str:
+        if not self._sessions.get(session_id):
+            raise FrameworkRPCError(f"session not open: {session_id}")
+        # Simulate a shell: echo returns its argument; otherwise a canned id line.
+        if command.startswith("echo "):
+            return command[len("echo "):] + "\n"
+        return "uid=0(root) gid=0(root)\n"
+
+    def session_stop(self, session_id: str) -> None:
+        if session_id in self._sessions:
+            self._sessions[session_id] = False
+
+
+class RealMetasploitAdapter:
+    """Live ``msfrpcd`` backend for authorized isolated-lab exploitation (PRD v2
+    Phase 24). Used only when ``framework_mode=real``; never reached offline or in
+    tests. Still exposes no generic console/datastore passthrough — only the
+    enumerated exploit/session operations."""
+
+    def __init__(self, host: str, port: int, password: str, ssl: bool):
+        from pymetasploit3.msfrpc import MsfRpcClient  # lazy: only needed live
+        if not password:
+            raise FrameworkError("msf_rpc_password is not set (TRASHSCAN_MSF_RPC_PASSWORD)")
+        self._client = MsfRpcClient(password, server=host, port=port, ssl=ssl)
+
+    def capabilities(self) -> FrameworkCapabilities:
+        return FrameworkCapabilities(version=str(self._client.core.version.get("version", "msf")),
+                                     module_ids=(), supports_check=True)
+
+    def module_metadata(self, module_id: str) -> dict:
+        return {"module_id": module_id}
+
+    # Check operations are not enabled for the real backend in this work unit;
+    # the admitted exploit path below is the only live operation.
+    def start_check(self, job: CheckJob) -> str:
+        raise UnsupportedOperationError("real adapter: module checks are not enabled")
+
+    def job_status(self, job_id: str) -> JobStatus:
+        raise UnsupportedOperationError("real adapter: checks are not enabled")
+
+    def job_result(self, job_id: str) -> NativeResult:
+        raise UnsupportedOperationError("real adapter: checks are not enabled")
+
+    def cancel(self, job_id: str) -> None:
+        raise UnsupportedOperationError("real adapter: checks are not enabled")
+
+    def run_exploit(self, job: ExploitJob) -> ExploitSession:
+        import time
+        name = job.module_id.split("exploit/", 1)[-1]
+        mod = self._client.modules.use("exploit", name)
+        mod["RHOSTS"] = job.target
+        for key, value in (job.options or {}).items():
+            mod[key] = value
+        before = set(self._client.sessions.list.keys())
+        mod.execute(payload=job.payload) if job.payload else mod.execute()
+        deadline = time.time() + 30
+        sid = None
+        while time.time() < deadline:
+            new = set(self._client.sessions.list.keys()) - before
+            if new:
+                sid = str(sorted(new, key=str)[-1])
+                break
+            time.sleep(1)
+        return ExploitSession(session_id=sid, opened=sid is not None, module_id=job.module_id)
+
+    def session_run(self, session_id: str, command: str, timeout_s: int = 15) -> str:
+        import time
+        sess = self._client.sessions.session(session_id)
+        sess.write(command + "\n")
+        time.sleep(min(timeout_s, 5))
+        out = sess.read() or ""
+        return out
+
+    def session_stop(self, session_id: str) -> None:
+        try:
+            self._client.sessions.session(session_id).stop()
+        except Exception:  # noqa: BLE001 - best-effort cleanup; recovery is separate
+            pass
+
 
 def get_framework_adapter() -> FrameworkAdapter:
-    """Return the active framework adapter. In this phase always the fake —
-    there is no real backend yet, and a real one stays withheld until the Phase
-    15 lab gates. There is intentionally no local-shell or console fallback."""
+    """Return the active framework adapter. ``framework_mode=real`` returns the
+    live ``msfrpcd`` backend (only reached once a gated proof actually executes);
+    otherwise the fake. There is intentionally no console/datastore passthrough."""
+    from ..config import get_settings
+    settings = get_settings()
+    if settings.framework_mode == "real":
+        return RealMetasploitAdapter(settings.msf_rpc_host, settings.msf_rpc_port,
+                                     settings.msf_rpc_password, settings.msf_rpc_ssl)
     return FakeFrameworkAdapter()

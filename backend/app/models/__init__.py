@@ -838,6 +838,47 @@ class SessionEvidence(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TerminalGrant(Base):
+    """A separate administrator grant for target-session terminal input (PRD v2
+    §22.5, Phase 22). Distinct from the session grant; references the exact
+    verified session, carries its own attestation and an absolute allowed time,
+    and never restarts any session clock. Administrator-only, behind
+    ``enable_lab_terminal`` (off)."""
+
+    __tablename__ = "terminal_grants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_sessions.id"),
+                                            nullable=False, index=True)
+    admin_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("users.id"))
+    attestation: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TerminalFrameReceipt(Base):
+    """An ordered receipt for one terminal input frame (PRD v2 §22.5). Frames are
+    bounded and deduplicated by ``request_id``; a receipt records whether the
+    frame was accepted and, if not, why. The authorization boundary is the grant/
+    lease/session — never a command blacklist."""
+
+    __tablename__ = "terminal_frame_receipts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    session_id: Mapped[str] = mapped_column(String(36), ForeignKey("lab_sessions.id"),
+                                            nullable=False, index=True)
+    grant_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("terminal_grants.id"))
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    request_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    input_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reason: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("session_id", "request_id", name="uq_terminal_frame"),)
+
+
 class Occurrence(Base):
     """One appearance of an :class:`Issue` on a specific surface in a specific
     execution (PRD v2 §10, Phase 9). ``finding_id`` is the legacy alias link:

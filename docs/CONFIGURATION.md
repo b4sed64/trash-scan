@@ -174,7 +174,7 @@ manual validation.
 | `TRASHSCAN_ENABLE_LAB_CHECKS` | `false` | (Future) active prerequisite checks against a lab surface. Off; requires its own plan/attestation/approval. |
 | `TRASHSCAN_ENABLE_LAB_PROOF` | `false` | (Future) controlled one-shot proof against a registered lab fixture. Off; requires proof plan + approval + lab/recovery gates. |
 | `TRASHSCAN_ENABLE_GUIDED_SESSIONS` | `false` | (Future) guided session operations. Off. |
-| `TRASHSCAN_ENABLE_LAB_TERMINAL` | `false` | (Future) administrator lab-terminal mode. Off. |
+| `TRASHSCAN_ENABLE_LAB_TERMINAL` | `false` | Optional administrator target-session terminal (fake channel). Off; endpoints 404 while off. Requires a terminal grant + exact attestation + controller lease + verified session; bounded 4 KiB frames; command-output only, no PTY/exec. |
 | `TRASHSCAN_PROOF_MODULES_PATH` | `/app/app/data/proof_modules.json` | Reviewed module manifest file. A sanitized sample ships; RESEARCH_ONLY entries are never executable. |
 
 **A feature flag alone never approves a job.** Only offline assessment is enabled;

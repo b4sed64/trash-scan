@@ -25,10 +25,11 @@ from ..models import (
     RecoveryRecord,
     SessionGrant,
     Target,
+    TerminalGrant,
     User,
 )
 from ..services import AuditService, AuthorizationService
-from ..services import guided, lab, proof
+from ..services import guided, lab, proof, terminal
 from ..services import session_broker as broker
 from ..services.authorization_service import PermissionDenied
 from .deps import get_current_user, require_admin, require_csrf
@@ -430,3 +431,76 @@ def list_session_interactions(session_id: str, user: User = Depends(get_current_
     ).scalars().all()
     return [{"id": r.id, "action_id": r.action_id, "state": r.state, "output": r.output,
              "reason": r.reason, "effect_claim": r.effect_claim} for r in rows]
+
+
+# --- administrator target-session terminal (PRD v2 §22.5, Phase 22) -------
+
+def _terminal_enabled() -> None:
+    if not get_settings().enable_lab_terminal:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "lab terminal is disabled")
+
+
+class TerminalGrantBody(BaseModel):
+    attestation: str
+    allowed_seconds: int = Field(default=600, ge=1, le=600)
+
+
+class TerminalInputBody(BaseModel):
+    input_text: str
+    request_id: str
+    token: str
+
+
+@router.get("/api/sessions/{session_id}/terminal/capabilities")
+def terminal_capabilities(session_id: str, user: User = Depends(get_current_user),
+                          db: Session = Depends(get_db)) -> dict:
+    _terminal_enabled()
+    _session_or_404(db, user, session_id)
+    return terminal.capabilities()
+
+
+@router.post("/api/sessions/{session_id}/terminal/grant", dependencies=[Depends(require_csrf)])
+def grant_terminal(session_id: str, body: TerminalGrantBody, admin: User = Depends(require_admin),
+                   db: Session = Depends(get_db)) -> dict:
+    _terminal_enabled()
+    s = db.get(LabSession, session_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    _target_access_or_404(db, admin, s.target_id)
+    try:
+        g = terminal.grant_terminal(db, session=s, admin=admin, attestation=body.attestation,
+                                    allowed_seconds=body.allowed_seconds, enabled=True)
+    except terminal.TerminalError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    AuditService.append(db, actor=f"user:{admin.username}", action="TERMINAL_GRANTED",
+                        object_type="lab_session", object_id=s.id,
+                        payload={"grant_id": g.id, "expires_at": g.expires_at.isoformat()})
+    db.commit()
+    return {"grant_id": g.id, "expires_at": g.expires_at, "capabilities": terminal.capabilities()}
+
+
+@router.post("/api/sessions/{session_id}/terminal/input", dependencies=[Depends(require_csrf)])
+def terminal_input(session_id: str, body: TerminalInputBody, admin: User = Depends(require_admin),
+                   db: Session = Depends(get_db)) -> dict:
+    _terminal_enabled()
+    s = db.get(LabSession, session_id)
+    if s is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    _target_access_or_404(db, admin, s.target_id)
+    grant = db.execute(
+        select(TerminalGrant).where(TerminalGrant.session_id == s.id,
+                                    TerminalGrant.active.is_(True))
+    ).scalars().first()
+    lease = db.execute(
+        select(ControllerLease).where(ControllerLease.session_id == s.id,
+                                      ControllerLease.active.is_(True))
+    ).scalars().first()
+    receipt = terminal.submit_frame(db, session=s, grant=grant, lease=lease, token=body.token,
+                                    input_text=body.input_text, request_id=body.request_id,
+                                    enabled=True)
+    AuditService.append(db, actor=f"user:{admin.username}", action="TERMINAL_INPUT",
+                        object_type="lab_session", object_id=s.id,
+                        payload={"accepted": receipt.accepted, "bytes": receipt.input_bytes,
+                                 "reason": receipt.reason})
+    db.commit()
+    return {"seq": receipt.seq, "accepted": receipt.accepted, "reason": receipt.reason}

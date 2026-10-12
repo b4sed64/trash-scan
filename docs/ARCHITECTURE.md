@@ -326,6 +326,18 @@ stages. It stays in force until an admin clears it; only one can be active at a 
   `reconcile_sessions` marks orphaned/expired sessions LOST on restart but never
   releases the fixture lock before recovery readiness. The JSON export carries a
   session summary.
+- **Administrator target-session terminal (`services/terminal.py`, PRD v2
+  §22.5/Phase 22).** The only free-form-input capability and the most restricted:
+  administrator-only, behind `enable_lab_terminal` (off). Authorization is the
+  terminal grant + controller lease + verified session, never a command blacklist.
+  `grant_terminal` needs the exact attestation and a READY/CONTROLLED session, with
+  one live grant per session and a bounded absolute expiry. `submit_frame` refuses
+  anything without an active grant, without a valid single-writer lease, or over
+  4 KiB — recording a receipt for refusals too — and deduplicates by `request_id`
+  so reconnects never replay input. On accept it echoes through the admitted
+  **fake** session channel as capability-limited command-output; no command runs,
+  and `capabilities()` discloses no-PTY/command-output-only rather than emulating a
+  full terminal.
 
 ---
 

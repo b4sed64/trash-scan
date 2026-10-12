@@ -22,8 +22,9 @@ capabilities. Nothing here relaxes a scope, authorization, or audit control.
 | `0017_session_domain` | `session_grants` / `lab_sessions` / `controller_leases` — session identity, grants and single-writer leases (PRD v2 Phase 18). Fake-only; sessions disabled against real targets. See "Session domain" below. |
 | `0018_interaction_records` | `interaction_records` — guided-action interaction lifecycle (PRD v2 Phase 20). Predefined actions only; fake-backed and gated off. See "Guided session actions" below. |
 | `0019_session_evidence` | `session_evidence` — separated session evidence events + recovery reporting (PRD v2 Phase 21). See "Session evidence & recovery" below. |
+| `0020_terminal` | `terminal_grants` / `terminal_frame_receipts` — optional administrator target-session terminal (PRD v2 Phase 22). Fake channel; administrator-only and gated off (`enable_lab_terminal`). See "Administrator target-session terminal" below. |
 
-`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0019_session_evidence`.
+`alembic upgrade head` (run automatically by `backend/entrypoint.sh`) is at `0020_terminal`.
 
 ## One scan, many targets, manual start
 
@@ -105,7 +106,7 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 `ISSUE_REOPENED`, `LAB_ENVIRONMENT_REGISTERED`, `LAB_ISOLATION_VERIFIED`,
 `LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`, `PROOF_PLAN_CREATED`,
 `PROOF_PLAN_APPROVED`, `PROOF_ATTEMPT_BLOCKED`, `PROOF_ATTEMPT_COMPLETED`,
-`SESSION_LEASE_ACQUIRED`, `SESSION_ACTION`. Failed logins
+`SESSION_LEASE_ACQUIRED`, `SESSION_ACTION`, `TERMINAL_GRANTED`, `TERMINAL_INPUT`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -424,8 +425,38 @@ proof-evidence infra.
   section distinguishing demonstrated effect, session state, transcript gaps and
   recovery incidents.
 
-Remaining: the session-timeline UI, and the optional administrator terminal
-(Phase 22).
+Remaining: the session-timeline UI.
+
+## Administrator target-session terminal (PRD v2 Phase 22 — fake channel, gated off)
+
+The single free-form-input capability, and the most restricted one
+(`services/terminal.py`, `terminal_grants` / `terminal_frame_receipts` via
+migration `0020`). Administrator-only and behind `enable_lab_terminal` (**off**);
+every endpoint 404s while the flag is off.
+
+- **Authorization is the grant + controller lease + verified session — not a
+  command blacklist.** `grant_terminal()` requires the exact terminal attestation,
+  a READY/CONTROLLED session, and a bounded absolute expiry; it deactivates any
+  prior active grant (one live grant per session, and a new grant never restarts
+  another's clock).
+- **Bounded input.** `submit_frame()` refuses a frame with no active/unexpired
+  grant for that session, without a valid single-writer controller lease
+  (`broker.accepts_input`), or over `MAX_FRAME_BYTES` (4 KiB). A refused frame is
+  **still recorded** as a receipt (accountability), with its reason.
+- **Idempotent, no replay.** Frames are deduplicated by `request_id`, so a
+  reconnect or retry never re-runs input.
+- **Fake channel only.** On accept, input is echoed back through the admitted
+  session channel as capability-limited command-output via `stream.append_output`;
+  no real command runs, and it can never start a module, change framework settings
+  or reach another target. `capabilities()` discloses the truth — a
+  command-output panel, `pty=False`, no resize/binary/interactive programs — rather
+  than emulating a full terminal.
+- **Endpoints:** `GET /api/sessions/{id}/terminal/capabilities`,
+  `POST .../terminal/grant` (audited `TERMINAL_GRANTED`),
+  `POST .../terminal/input` (audited `TERMINAL_INPUT`).
+
+Remaining real-lab gate: a live demonstration cannot be satisfied in this
+dev environment; the capability stays fake-backed and disabled here.
 
 ## Guided session actions (PRD v2 Phase 20 — predefined, fake-backed)
 
@@ -864,7 +895,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **290 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **298 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -903,7 +934,11 @@ valid lease, required-param validation, idempotent request_id, unknown-outcome
 not auto-resent, per-session budget, and terminate closing the session; Phase 21
 added `test_session_evidence.py` — only PROOF_EFFECT can be demonstrated, the
 session report separates demonstrated/state/gaps/recovery, absolute+idle expiry,
-and reconciliation marking an orphan LOST without releasing the fixture lock).
+and reconciliation marking an orphan LOST without releasing the fixture lock;
+Phase 22 added `test_terminal.py` — a grant needs the exact attestation and the
+flag, input is refused without an active grant or a valid lease, an over-4-KiB
+frame is rejected but recorded, a duplicate request_id never replays, and
+`capabilities()` discloses no-PTY/command-output-only).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

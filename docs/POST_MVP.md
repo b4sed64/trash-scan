@@ -106,7 +106,8 @@ A scan is now **one logical unit** identified by a `scan_group_id`, with one
 `ISSUE_REOPENED`, `LAB_ENVIRONMENT_REGISTERED`, `LAB_ISOLATION_VERIFIED`,
 `LAB_FIXTURE_REGISTERED`, `LAB_RESTORE_REHEARSED`, `PROOF_PLAN_CREATED`,
 `PROOF_PLAN_APPROVED`, `PROOF_ATTEMPT_BLOCKED`, `PROOF_ATTEMPT_COMPLETED`,
-`SESSION_LEASE_ACQUIRED`, `SESSION_ACTION`, `TERMINAL_GRANTED`, `TERMINAL_INPUT`. Failed logins
+`SESSION_LEASE_ACQUIRED`, `SESSION_ACTION`, `TERMINAL_GRANTED`, `TERMINAL_INPUT`,
+`EXPLOIT_CANDIDATES_VIEWED`. Failed logins
 (`AUTH_FAILURE`) and logout (`AUTH_LOGOUT`) now record the actor as `user:<username>` (was
 `username:<x>` and a raw user id respectively); a failed login also records
 `attempted_username` in the payload.
@@ -451,6 +452,13 @@ isolated-lab exploitation. No new schema (head stays `0020_terminal`).
   session is ATTEMPTED_NOT_DEMONSTRATED. All existing gates
   (`enable_lab_proof` + verified isolation + registered fixture + plan/approval)
   still hold — the mode alone runs nothing.
+- **Candidate-exploit suggestions** (`exploitability.exploit_candidates`): match
+  observed service product/version/port against the admitted exploit modules'
+  `compatible` block and surface which exploits MAY apply, ranked by confidence
+  (product+version = high, product only = medium). Published at
+  `GET /api/targets/{id}/exploit-candidates` (audited `EXPLOIT_CANDIDATES_VIEWED`)
+  and in the `exploit_candidates` section of `report.json`. Analytical only —
+  nothing runs, and a suggestion is explicitly not a confirmation.
 - **Tested fake-backed** (`test_exploit.py`); the live lab run is a real-lab gate
   (see `docs/ACCEPTANCE.md`), not exercised from CI.
 
@@ -941,7 +949,7 @@ itself (the coverage ledger carries the bounded reference today).
 
 ## Tests
 
-The suite is now **313 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
+The suite is now **317 tests** (Phase 10 added TLS IP-only/DMARC/SPF cases to
 `test_enrichment.py` and RDAP-severity cases to `test_osint.py`; Phase 11 added
 `test_vulnintel.py` — offline matching range boundaries, product-only UNKNOWN,
 the deterministic priority lanes, snapshot FRESH/STALE/MISSING status, and an
@@ -993,7 +1001,10 @@ Phase 24 added `test_exploit.py` — the widened exploitation path, fake-backed:
 session + echoed marker is DEMONSTRATED, a patched target (no session) is the
 negative control, the flag-off gate still BLOCKS, the session is always stopped,
 the real msfrpcd backend is selected only by framework_mode=real and refuses a
-blank password, and the capability matrix reports lab_proof backing per mode).
+blank password, the capability matrix reports lab_proof backing per mode, and the
+candidate-exploit matcher ranks observed services against admitted exploit
+modules — product+version high, product-only medium, unrelated services none —
+and the endpoint surfaces them).
 Post-MVP additions:
 `test_passwords.py`, `test_audit_query.py`, `test_scan_targeting.py`, `test_port_sets.py`,
 `test_scan_groups.py` (one scan across many targets; one approval; manual start / pause /

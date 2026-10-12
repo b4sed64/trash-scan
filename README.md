@@ -330,7 +330,7 @@ docker build -t trashscan-api ./backend
 docker run --rm -e TRASHSCAN_SCANNER_MODE=fake trashscan-api pytest
 ```
 
-The suite (**313 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
+The suite (**317 tests**) covers IP/CIDR/domain canonicalization, allow/deny precedence,
 DNS-rebinding / split-answer rejection, public-target boundaries, the audit hash chain
 (tamper detection, filter/query), role + assignment enforcement through the HTTP API, CSRF,
 session invalidation on account disable / password change / admin reset, the scan-execution
@@ -405,7 +405,10 @@ As of Phase 24 the one-shot proof path has a **real exploitation backend** (Meta
 `enable_lab_proof` on **and** verified lab isolation **and** a registered fixture, an approved
 plan actually runs the admitted exploit against the lab fixture, proves code execution with one
 benign marker command, then stops the session and restores. With the default
-`framework_mode=fake` nothing executes. The operator is responsible for holding written
+`framework_mode=fake` nothing executes. As an analytical aid, `GET
+/api/targets/{id}/exploit-candidates` (and the `report.json` `exploit_candidates` section)
+suggests which admitted exploit modules may apply to the scan's observed service/version
+evidence — suggestions only, never a confirmation, and nothing is run. The operator is responsible for holding written
 permission for every target and keeping the lab segment isolated. `GET /api/capabilities`
 publishes the authoritative, config-derived support matrix (including the active
 `framework_mode` and whether scan data is synthetic); see

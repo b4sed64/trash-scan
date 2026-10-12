@@ -21,6 +21,7 @@ from ..models import (
     RiskException,
     ScanComparison,
     ScanExecution,
+    Service,
     User,
 )
 from ..services import AuditService, AuthorizationService
@@ -387,6 +388,28 @@ def close_issue(issue_id: str, body: CloseBody, admin: User = Depends(require_ad
     return _issue_review_dto(db, issue)
 
 
+@router.get("/api/targets/{target_id}/exploit-candidates")
+def target_exploit_candidates(target_id: str, user: User = Depends(get_current_user),
+                              db: Session = Depends(get_db)) -> dict:
+    """Which admitted exploit modules MAY apply to this target's observed services
+    (PRD v2 Phase 24). Analytical suggestions only — nothing is executed, and a
+    suggestion is never a confirmation."""
+    _access_or_404(db, user, target_id)
+    services = db.execute(select(Service).where(Service.target_id == target_id)).scalars().all()
+    candidates = exploitability.exploit_candidates(services)
+    AuditService.append(db, actor=f"user:{user.username}", action="EXPLOIT_CANDIDATES_VIEWED",
+                        object_type="target", object_id=target_id,
+                        payload={"count": len(candidates)})
+    db.commit()
+    return {
+        "target_id": target_id,
+        "candidates": candidates,
+        "note": ("Suggestions derived from observed service/version evidence; no exploit "
+                 "has been run. Executing one still requires a proof plan, framework_mode=real, "
+                 "enable_lab_proof, verified lab isolation and a registered fixture."),
+    }
+
+
 @router.get("/api/targets/{target_id}/report.json")
 def target_report_json(target_id: str, user: User = Depends(get_current_user),
                        db: Session = Depends(get_db)) -> dict:
@@ -446,10 +469,13 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
                         object_type="target", object_id=target_id, payload={"format": "json"})
     db.commit()
     from ..services import capabilities
+    services = db.execute(select(Service).where(Service.target_id == target_id)).scalars().all()
+    exploit_candidates = exploitability.exploit_candidates(services)
     return {
         "target": {"id": target_id, "value": tgt.value, "kind": tgt.kind},
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "data_provenance": capabilities.data_provenance(),
+        "exploit_candidates": exploit_candidates,
         "counts": {"active_total": len(active), "excluded_total": len(excluded),
                    "candidate_total": len(candidates)},
         "issues": issue_rows,
@@ -466,6 +492,7 @@ def target_report_json(target_id: str, user: User = Depends(get_current_user),
             "Excluded issues (false-positive / accepted-risk / verified) are retained here with totals.",
             "A clean result only means 'not observed' where coverage shows the family was ASSESSED.",
             "Session evidence distinguishes demonstrated effect, session state, transcript gaps and recovery incidents.",
+            "Exploit candidates are analytical suggestions from observed services; none has been run, and a suggestion is not a confirmation.",
         ],
     }
 
